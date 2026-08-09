@@ -309,6 +309,24 @@
   .mini-day.has-event{background:#2a2b30;color:var(--text);}
   .mini-day.today{background:var(--gold);color:#111;}
   .mini-day.other-month{visibility:hidden;cursor:default;}
+
+  /* Sync / lock overlay */
+  .lock-modal{max-width:440px;}
+  .lock-modal h2{font-size:16px;margin:0 0 6px;}
+  .lock-modal p{font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 16px;}
+  .lock-field{margin-bottom:12px;}
+  .lock-field label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;}
+  .lock-field input{
+    width:100%;background:#0d0d0f;border:1px solid var(--card-border);color:var(--text);
+    border-radius:6px;padding:9px 10px;font-size:13px;box-sizing:border-box;
+  }
+  .lock-checkbox{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:14px;}
+  .lock-actions{display:flex;gap:10px;}
+  .lock-actions button{flex:1;border-radius:8px;border:none;padding:10px;font-size:13px;font-weight:600;}
+  .lock-status{font-size:12px;color:var(--gold);min-height:16px;margin-top:8px;}
+  .lock-help{font-size:11px;color:var(--muted);margin-top:14px;line-height:1.5;border-top:1px solid var(--card-border);padding-top:12px;}
+  .lock-help a{color:var(--gold);}
+  .sync-status-pill{cursor:pointer;}
 </style>
 </head>
 <body>
@@ -326,6 +344,7 @@
 
   <div class="meta-row">
     <button class="pill schedule-btn" onclick="openScheduleModal()">📅 View Schedule</button>
+    <button class="pill sync-status-pill" id="syncStatusPill" onclick="openSyncOverlay()">🔒 Set up sync</button>
     <div class="pill" id="dateTimePill"><b id="dateStr"></b> · <span id="timeStr"></span></div>
     <div class="pill" id="weatherPill">📍 <b>Boston, MA</b> — loading weather…</div>
   </div>
@@ -510,6 +529,37 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="lockOverlay">
+    <div class="modal lock-modal">
+      <h2 id="lockTitle">🔒 Sync this dashboard across devices</h2>
+      <p id="lockDesc">Optional. Enter a passphrase and a GitHub personal access token (scoped only to "gist") to sync all your data — classes, budget, to-dos, everything — to a private encrypted GitHub Gist. Same passphrase + token on another device loads the same data.</p>
+
+      <div class="lock-field">
+        <label>Passphrase</label>
+        <input id="lockPassphrase" type="password" placeholder="Something only you know" autocomplete="off">
+      </div>
+      <div class="lock-field" id="lockTokenField">
+        <label>GitHub personal access token (gist scope)</label>
+        <input id="lockToken" type="password" placeholder="ghp_..." autocomplete="off">
+      </div>
+      <div class="lock-checkbox" id="lockRememberRow">
+        <input type="checkbox" id="lockRemember" checked>
+        <label for="lockRemember">Remember token on this device</label>
+      </div>
+      <div class="lock-checkbox" id="lockUseDifferentRow" style="display:none;">
+        <a href="#" onclick="event.preventDefault(); showTokenField();">Use a different token</a>
+      </div>
+      <div class="lock-actions">
+        <button class="btn-save" onclick="handleUnlockSubmit()">Unlock &amp; Sync</button>
+        <button class="btn-cancel" onclick="useOfflineOnly()">Use this device only</button>
+      </div>
+      <div class="lock-status" id="lockStatus"></div>
+      <div class="lock-help" id="lockHelp">
+        Don't have a token yet? Go to <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a> → Generate new token (classic) → check only the "gist" box → generate, then paste it above. Your passphrase never leaves this browser — only encrypted data is sent to GitHub.
+      </div>
+    </div>
+  </div>
+
   <footer>Everything below is editable and saved automatically in this browser (localStorage): quick links, classes, deadlines, co-op tracker, and to-dos. Import an Outlook .ics export to auto-fill today's classes.</footer>
 
 <script>
@@ -539,7 +589,20 @@ function load(key, fallback){
   const raw = localStorage.getItem(key);
   return raw ? JSON.parse(raw) : fallback;
 }
-function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+// Sync state is declared here (rather than down in the sync module) because
+// `save()` runs during the very first synchronous page load — before a
+// `let` declared later in the script would be usable (temporal dead zone).
+let syncEnabled = false;
+let syncToken = null;
+let syncGistId = null;
+let syncCryptoKey = null;
+let syncSaltB64 = null;
+let cloudSyncTimer = null;
+
+function save(key, val){
+  localStorage.setItem(key, JSON.stringify(val));
+  if(typeof scheduleCloudPush === 'function') scheduleCloudPush();
+}
 function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ============ Quick Links ============ */
@@ -1459,6 +1522,266 @@ function renderYearGrid(refDate){
 const nameEl = document.getElementById('welcomeName');
 nameEl.textContent = localStorage.getItem('wit_name') || 'ALEX J.';
 nameEl.addEventListener('blur', ()=> localStorage.setItem('wit_name', nameEl.textContent.trim()));
+if(typeof scheduleCloudPush === 'function'){
+  nameEl.addEventListener('blur', ()=> scheduleCloudPush());
+}
+
+/* ============ Cross-device sync via an encrypted GitHub Gist ============ */
+// Data is encrypted client-side (PBKDF2 -> AES-GCM) with a passphrase before
+// ever leaving the browser. A GitHub personal access token (scoped only to
+// "gist") is used purely as storage — it never sees the plaintext data.
+const GIST_FILENAME = 'wit-dashboard-sync.json';
+
+function randomBytes(n){ return crypto.getRandomValues(new Uint8Array(n)); }
+function toB64(bytes){ return btoa(String.fromCharCode(...bytes)); }
+function fromB64(b64){ return Uint8Array.from(atob(b64), c => c.charCodeAt(0)); }
+
+async function deriveSyncKey(passphrase, saltBytes){
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(passphrase), {name:'PBKDF2'}, false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt: saltBytes, iterations: 100000, hash:'SHA-256'},
+    keyMaterial,
+    {name:'AES-GCM', length:256},
+    false,
+    ['encrypt','decrypt']
+  );
+}
+async function encryptForSync(obj, key, saltB64){
+  const iv = randomBytes(12);
+  const enc = new TextEncoder();
+  const plaintext = enc.encode(JSON.stringify(obj));
+  const cipherBuf = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, plaintext);
+  return { v:1, salt: saltB64, iv: toB64(iv), data: toB64(new Uint8Array(cipherBuf)) };
+}
+async function decryptForSync(payload, key){
+  const iv = fromB64(payload.iv);
+  const cipherBytes = fromB64(payload.data);
+  const plainBuf = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, cipherBytes);
+  return JSON.parse(new TextDecoder().decode(plainBuf));
+}
+
+function ghHeaders(token){
+  return { 'Authorization':'token ' + token, 'Accept':'application/vnd.github+json', 'Content-Type':'application/json' };
+}
+async function githubFindGist(token){
+  const res = await fetch('https://api.github.com/gists', { headers: ghHeaders(token) });
+  if(!res.ok) throw new Error('Could not list gists (status ' + res.status + ')');
+  const gists = await res.json();
+  const found = gists.find(g => g.files && g.files[GIST_FILENAME]);
+  return found ? found.id : null;
+}
+async function githubCreateGist(token, content){
+  const res = await fetch('https://api.github.com/gists', {
+    method:'POST', headers: ghHeaders(token),
+    body: JSON.stringify({ description:'WIT Dashboard sync data (encrypted)', public:false, files: { [GIST_FILENAME]: { content } } })
+  });
+  if(!res.ok) throw new Error('Could not create gist (status ' + res.status + ')');
+  const g = await res.json();
+  return g.id;
+}
+async function githubGetGistContent(token, gistId){
+  const res = await fetch('https://api.github.com/gists/' + gistId, { headers: ghHeaders(token) });
+  if(!res.ok) throw new Error('Could not read gist (status ' + res.status + ')');
+  const g = await res.json();
+  const file = g.files[GIST_FILENAME];
+  return file ? file.content : null;
+}
+async function githubPatchGist(token, gistId, content){
+  const res = await fetch('https://api.github.com/gists/' + gistId, {
+    method:'PATCH', headers: ghHeaders(token),
+    body: JSON.stringify({ files: { [GIST_FILENAME]: { content } } })
+  });
+  if(!res.ok) throw new Error('Could not update gist (status ' + res.status + ')');
+}
+
+// Gathers every synced section into one bundle for pushing to the cloud.
+function gatherState(){
+  return {
+    links, schedule, classes, deadlines, coop, todos,
+    transactions, recurringBills, simBudget,
+    name: localStorage.getItem('wit_name') || ''
+  };
+}
+// Applies a decrypted cloud bundle to the live in-memory state and re-renders
+// everything — no page reload needed.
+function applyCloudState(bundle){
+  if(bundle.links) links = bundle.links;
+  if(bundle.schedule) schedule = bundle.schedule;
+  if(bundle.classes) classes = bundle.classes;
+  if(bundle.deadlines) deadlines = bundle.deadlines;
+  if(bundle.coop) coop = bundle.coop;
+  if(bundle.todos) todos = bundle.todos;
+  if(bundle.transactions) transactions = bundle.transactions;
+  if(bundle.recurringBills) recurringBills = bundle.recurringBills;
+  if(bundle.simBudget) simBudget = bundle.simBudget;
+  localStorage.setItem('wit_links', JSON.stringify(links));
+  localStorage.setItem('wit_schedule', JSON.stringify(schedule));
+  localStorage.setItem('wit_classes', JSON.stringify(classes));
+  localStorage.setItem('wit_deadlines', JSON.stringify(deadlines));
+  localStorage.setItem('wit_coop', JSON.stringify(coop));
+  localStorage.setItem('wit_todos', JSON.stringify(todos));
+  localStorage.setItem('wit_transactions', JSON.stringify(transactions));
+  localStorage.setItem('wit_recurring', JSON.stringify(recurringBills));
+  localStorage.setItem('wit_simBudget', JSON.stringify(simBudget));
+  if(bundle.name){
+    localStorage.setItem('wit_name', bundle.name);
+    nameEl.textContent = bundle.name;
+  }
+  renderLinks(); renderClasses(); renderDeadlines(); renderCoop(); renderTodos(); renderBudget();
+}
+
+function setSyncStatusPill(text){
+  const pill = document.getElementById('syncStatusPill');
+  if(pill) pill.textContent = text;
+}
+function scheduleCloudPush(){
+  if(!syncEnabled || !syncCryptoKey || !syncGistId || !syncToken) return;
+  clearTimeout(cloudSyncTimer);
+  setSyncStatusPill('🔒 Syncing…');
+  cloudSyncTimer = setTimeout(pushStateToCloud, 1500);
+}
+async function pushStateToCloud(){
+  try{
+    const bundle = gatherState();
+    const encrypted = await encryptForSync(bundle, syncCryptoKey, syncSaltB64);
+    await githubPatchGist(syncToken, syncGistId, JSON.stringify(encrypted));
+    setSyncStatusPill('🔒 Synced ✓');
+  } catch(err){
+    console.error(err);
+    setSyncStatusPill('🔒 Sync failed — click to retry');
+  }
+}
+
+// When a token is already remembered on this device, hide the token field
+// entirely so unlocking on that device really is just "type a passphrase."
+function showTokenField(){
+  document.getElementById('lockTokenField').style.display = 'block';
+  document.getElementById('lockRememberRow').style.display = 'flex';
+  document.getElementById('lockUseDifferentRow').style.display = 'none';
+  document.getElementById('lockHelp').style.display = 'block';
+  document.getElementById('lockToken').value = '';
+}
+function hideTokenField(rememberedToken){
+  document.getElementById('lockTokenField').style.display = 'none';
+  document.getElementById('lockRememberRow').style.display = 'none';
+  document.getElementById('lockUseDifferentRow').style.display = 'flex';
+  document.getElementById('lockHelp').style.display = 'none';
+  document.getElementById('lockToken').value = rememberedToken;
+}
+function openSyncOverlay(){
+  document.getElementById('lockStatus').textContent = '';
+  document.getElementById('lockPassphrase').value = '';
+  const remembered = localStorage.getItem('wit_sync_token');
+  if(remembered){
+    document.getElementById('lockTitle').textContent = '🔒 Enter your passphrase';
+    document.getElementById('lockDesc').textContent = 'This device already has a saved GitHub token — just enter your passphrase to sync.';
+    hideTokenField(remembered);
+  } else {
+    document.getElementById('lockTitle').textContent = '🔒 Sync this dashboard across devices';
+    document.getElementById('lockDesc').textContent = 'Optional. Enter a passphrase and a GitHub personal access token (scoped only to "gist") to sync all your data — classes, budget, to-dos, everything — to a private encrypted GitHub Gist. Same passphrase + token on another device loads the same data.';
+    showTokenField();
+  }
+  document.getElementById('lockOverlay').classList.add('open');
+  document.getElementById('lockPassphrase').focus();
+}
+function closeSyncOverlay(){
+  document.getElementById('lockOverlay').classList.remove('open');
+}
+function useOfflineOnly(){
+  syncEnabled = false;
+  localStorage.setItem('wit_sync_enabled', '0');
+  setSyncStatusPill('🔓 Offline (this device only)');
+  closeSyncOverlay();
+}
+
+async function handleUnlockSubmit(){
+  const passphrase = document.getElementById('lockPassphrase').value;
+  const tokenInput = document.getElementById('lockToken').value.trim();
+  const remember = document.getElementById('lockRemember').checked;
+  const statusEl = document.getElementById('lockStatus');
+  const token = tokenInput || localStorage.getItem('wit_sync_token') || '';
+
+  if(!passphrase || !token){
+    statusEl.textContent = 'Enter both a passphrase and a GitHub token.';
+    return;
+  }
+  if(!window.isSecureContext || !crypto.subtle){
+    statusEl.textContent = 'Sync needs a secure (https) page — it won\'t work opened as a local file. Host it (e.g. GitHub Pages) first.';
+    return;
+  }
+
+  statusEl.textContent = 'Connecting…';
+  try{
+    let gistId = localStorage.getItem('wit_sync_gist_id');
+    if(gistId){
+      // Verify it's still valid/reachable; fall back to searching if not.
+      try{ await githubGetGistContent(token, gistId); }
+      catch(e){ gistId = null; }
+    }
+    if(!gistId) gistId = await githubFindGist(token);
+
+    let payload = null;
+    if(gistId){
+      const content = await githubGetGistContent(token, gistId);
+      payload = content ? JSON.parse(content) : null;
+    }
+
+    const salt = (payload && payload.salt) ? fromB64(payload.salt) : randomBytes(16);
+    const key = await deriveSyncKey(passphrase, salt);
+
+    let bundle = null;
+    if(payload){
+      try{
+        bundle = await decryptForSync(payload, key);
+      } catch(e){
+        statusEl.textContent = 'Wrong passphrase (or the stored data is corrupted). Try again.';
+        return;
+      }
+    }
+
+    syncToken = token;
+    syncCryptoKey = key;
+    syncSaltB64 = toB64(salt);
+    syncEnabled = true;
+
+    if(!gistId){
+      // Brand-new setup: seed the cloud with whatever's on this device already.
+      const seed = gatherState();
+      const encrypted = await encryptForSync(seed, key, syncSaltB64);
+      gistId = await githubCreateGist(token, JSON.stringify(encrypted));
+      bundle = seed;
+    }
+    syncGistId = gistId;
+    localStorage.setItem('wit_sync_gist_id', gistId);
+    if(remember) localStorage.setItem('wit_sync_token', token);
+    localStorage.setItem('wit_sync_enabled', '1');
+
+    if(bundle) applyCloudState(bundle);
+
+    setSyncStatusPill('🔒 Synced ✓');
+    closeSyncOverlay();
+  } catch(err){
+    console.error(err);
+    statusEl.textContent = 'Connection error: ' + err.message;
+  }
+}
+
+function initSyncGate(){
+  const enabledFlag = localStorage.getItem('wit_sync_enabled');
+  if(enabledFlag === '0'){
+    setSyncStatusPill('🔓 Offline (this device only)');
+    return;
+  }
+  if(enabledFlag === '1'){
+    setSyncStatusPill('🔒 Enter passphrase to sync');
+    openSyncOverlay();
+    return;
+  }
+  // Never configured on this device — offer the choice, don't force it.
+  setSyncStatusPill('🔒 Set up sync');
+}
+initSyncGate();
 </script>
 
 </body>
