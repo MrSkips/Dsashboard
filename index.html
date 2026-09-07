@@ -648,6 +648,17 @@
   body.focus-mode #timerOverlay{ z-index:1001; }
   body.focus-mode #timerOverlay .close-modal{ display:none; }
 
+  /* Press-and-hold fill on the Focus Mode button when exiting — a
+     one-click tap does nothing; only a sustained hold completes it. */
+  #focusModeBtn{ position:relative; overflow:hidden; }
+  #focusModeBtn.holding::after{
+    content:'';
+    position:absolute; left:0; top:0; bottom:0;
+    width:calc(var(--hold-pct, 0) * 100%);
+    background:rgba(231,32,43,.4);
+    pointer-events:none;
+  }
+
   /* ---- Command palette ---- */
   #paletteList{max-height:320px;overflow-y:auto;}
   .palette-item{
@@ -706,9 +717,12 @@
     <button class="pill schedule-btn" onclick="openTimerModal()" title="Shortcut: T">⏱ Focus</button>
     <button class="pill schedule-btn" onclick="openHabitsModal()" title="Shortcut: H">🔥 Habits</button>
     <button class="pill schedule-btn" onclick="openInsightsModal()" title="Shortcut: I">📊 Insights</button>
-    <button class="pill schedule-btn" id="focusModeBtn" onclick="toggleFocusMode()" title="Shortcut: F">🧘 Focus Mode</button>
+    <button class="pill schedule-btn" id="focusModeBtn" title="Shortcut: F"
+      onpointerdown="focusBtnPointerDown(event)" onpointerup="focusBtnPointerUp(event)" onpointerleave="focusBtnPointerUp(event)" onpointercancel="focusBtnPointerUp(event)"
+      onkeydown="if(event.key==='Enter'||event.key===' '){ event.preventDefault(); toggleFocusMode(); }">🧘 Focus Mode</button>
     <button class="pill" id="countdownPill" onclick="editCountdown()" title="Click to change"></button>
     <button class="pill sync-status-pill" id="syncStatusPill" onclick="openSyncOverlay()">🔒 Set up sync</button>
+    <button class="pill" onclick="openShortcutsModal()" title="Keyboard shortcuts & quick capture syntax" aria-label="Keyboard shortcuts and quick capture syntax">⌨️ Help</button>
     <div class="pill" id="dateTimePill"><b id="dateStr"></b> · <span id="timeStr"></span></div>
     <div class="pill" id="weatherPill" style="position:relative;cursor:pointer;" onclick="toggleWeatherDetail()">
       <svg class="loading-ring" viewBox="0 0 24 24" fill="none">
@@ -723,7 +737,7 @@
 
   <div class="quick-capture-wrap" id="quickCaptureWrap">
     <span>⚡</span>
-    <input id="quickCapture" placeholder='Quick add — "due fri: essay draft", "$12 lunch", or just a task... (Ctrl+K for commands)'
+    <input id="quickCapture" placeholder='Quick add — "essay due friday !high", "$12 lunch", or just a task... (press ? for syntax help, Ctrl+K for commands)'
       onkeydown="if(event.key==='Enter' && this.value.trim()){ handleQuickCapture(this.value.trim()); this.value=''; }">
   </div>
 
@@ -779,6 +793,10 @@
               <option value="High">Priority: High</option>
               <option value="Low">Priority: Low</option>
             </select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;">
+              <input type="checkbox" id="deadlineRepeat" style="width:auto;">
+              Repeats weekly
+            </label>
             <div class="form-actions">
               <button class="btn-save" onclick="addDeadline()">Add</button>
               <button class="btn-cancel" onclick="toggleForm('deadlineForm')">Cancel</button>
@@ -1029,6 +1047,44 @@
    </div>
   </div>
 
+  <div class="modal-overlay" id="shortcutsOverlay" onclick="if(event.target===this) closeShortcutsModal();">
+   <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <h2 style="font-size:15px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:0;">Shortcuts &amp; Quick Capture</h2>
+      <button class="close-modal" onclick="closeShortcutsModal()">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin:2px 0 8px;">Keyboard shortcuts</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:13px;margin-bottom:16px;">
+      <div><kbd class="mono">?</kbd> — this menu</div>
+      <div><kbd class="mono">Ctrl/⌘ K</kbd> — command palette</div>
+      <div><kbd class="mono">/</kbd> — focus search</div>
+      <div><kbd class="mono">N</kbd> — new to-do</div>
+      <div><kbd class="mono">S</kbd> — schedule</div>
+      <div><kbd class="mono">B</kbd> — budget</div>
+      <div><kbd class="mono">G</kbd> — grades</div>
+      <div><kbd class="mono">T</kbd> — focus timer</div>
+      <div><kbd class="mono">H</kbd> — habits</div>
+      <div><kbd class="mono">I</kbd> — insights</div>
+      <div><kbd class="mono">F</kbd> — toggle focus mode</div>
+      <div><kbd class="mono">Esc</kbd> — close any modal</div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin:2px 0 8px;">Quick Capture examples</div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;">
+      <div><span class="mono" style="color:var(--wit-teal);">essay due friday</span> — deadline, next Friday (also lands on the calendar)</div>
+      <div><span class="mono" style="color:var(--wit-teal);">lab report in 3 days !high</span> — High-priority deadline</div>
+      <div><span class="mono" style="color:var(--wit-teal);">dentist tuesday 10am</span> — timed calendar event</div>
+      <div><span class="mono" style="color:var(--wit-teal);">team meeting at 3pm</span> — timed event, defaults to today</div>
+      <div><span class="mono" style="color:var(--wit-teal);">$12 lunch</span> — expense, category auto-guessed</div>
+      <div><span class="mono" style="color:var(--wit-teal);">+45 paycheck</span> — income</div>
+      <div><span class="mono" style="color:var(--wit-teal);">$9 coffee yesterday</span> — backdated expense</div>
+      <div><span class="mono" style="color:var(--wit-teal);">call advisor</span> — plain to-do (no date/time/money found)</div>
+    </div>
+    <div class="editor-note" style="margin-top:14px;">Dates understand ISO (2026-09-10), M/D, "next &lt;day&gt;", "in N days/weeks", month names, "today/tomorrow/yesterday", and "eod". A date with no clock time becomes a deadline; a clock time (with or without a date) becomes a timed calendar event — both show up on the Schedule calendar. Add <span class="mono">!high</span>, <span class="mono">!medium</span>, or <span class="mono">!low</span> anywhere to set a deadline's priority.</div>
+    <div class="editor-note" style="margin-top:6px;">Need something that repeats — a weekly meeting, a monthly bill reminder? Open Schedule and use <b>+ Add Event</b> for full control over recurrence, specific weekdays, and an end date/count.</div>
+    <div class="editor-note" style="margin-top:6px;"><b>Classes</b> vs <b>Events</b> vs <b>Deadlines</b>, in one line: Classes are your fixed weekly course schedule (set once, edited from the Classes list); Events are anything else with a time or a repeat pattern — meetings, appointments, recurring bills, workouts — added from Schedule → <b>+ Add Event</b>; Deadlines are things due by a date with no time slot, like assignments — add those from Quick Capture or the Deadlines list. When in doubt: has a specific time or repeats on a schedule → Event. Just due by a date → Deadline.</div>
+   </div>
+  </div>
+
   <div class="modal-overlay" id="habitsOverlay">
    <div class="modal" style="max-width:640px;">
     <div class="modal-header">
@@ -1061,8 +1117,46 @@
           <span class="period-label" id="periodLabel"></span>
           <button class="nav-btn" onclick="navigateSchedule(1)">›</button>
           <button class="ics-btn" onclick="goToToday()">Today</button>
+          <button class="ics-btn" onclick="toggleAddEventForm()">+ Add Event</button>
         </div>
         <button class="close-modal" onclick="closeScheduleModal()">✕</button>
+      </div>
+      <div id="addEventForm" class="inline-form" style="margin:0 20px;">
+        <div class="inline-form-inner">
+          <input id="evTitle" placeholder="Title (e.g. Team meeting, Doctor's appointment)">
+          <div style="display:flex;gap:8px;">
+            <input id="evDate" type="date" style="flex:1;">
+            <input id="evStartTime" type="time" style="flex:1;" title="Start time (optional — leave blank for an all-day entry)">
+            <input id="evEndTime" type="time" style="flex:1;" title="End time (optional)">
+          </div>
+          <select id="evRepeat" onchange="renderEventFormConditionals()">
+            <option value="none" selected>Does not repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <div id="evIntervalRow" style="display:none;align-items:center;gap:8px;">
+            <span style="font-size:12px;color:var(--muted);">Every</span>
+            <input id="evInterval" type="number" min="1" value="1" style="width:56px;">
+            <span id="evIntervalUnit" style="font-size:12px;color:var(--muted);">day(s)</span>
+          </div>
+          <div id="evByDayRow" style="display:none;gap:4px;flex-wrap:wrap;align-items:center;"></div>
+          <div id="evByDayHint" style="display:none;font-size:11px;color:var(--muted);margin-top:-4px;">Pick specific days, or leave all unpicked to repeat on the same weekday as the date above.</div>
+          <div id="evEndRow" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:12px;color:var(--muted);">Ends</span>
+            <select id="evEndType" onchange="renderEventFormConditionals()">
+              <option value="never" selected>Never</option>
+              <option value="until">On date</option>
+              <option value="count">After N times</option>
+            </select>
+            <input id="evEndUntil" type="date" style="display:none;">
+            <input id="evEndCount" type="number" min="1" value="10" style="display:none;width:56px;">
+          </div>
+          <div class="form-actions">
+            <button class="btn-save" id="evFormSubmitBtn" onclick="submitEventForm()">Add to Calendar</button>
+            <button class="btn-cancel" onclick="toggleAddEventForm()">Cancel</button>
+          </div>
+        </div>
       </div>
       <div id="scheduleBody"></div>
     </div>
@@ -1075,11 +1169,11 @@
 
       <div class="lock-field">
         <label>Passphrase</label>
-        <input id="lockPassphrase" type="password" placeholder="Something only you know" autocomplete="off">
+        <input id="lockPassphrase" type="password" placeholder="Something only you know" autocomplete="off" onkeydown="if(event.key==='Enter'){ event.preventDefault(); handleUnlockSubmit(); }">
       </div>
       <div class="lock-field" id="lockTokenField">
         <label>GitHub personal access token (gist scope)</label>
-        <input id="lockToken" type="password" placeholder="ghp_..." autocomplete="off">
+        <input id="lockToken" type="password" placeholder="ghp_..." autocomplete="off" onkeydown="if(event.key==='Enter'){ event.preventDefault(); handleUnlockSubmit(); }">
       </div>
       <div class="lock-checkbox" id="lockRememberRow">
         <input type="checkbox" id="lockRemember" checked>
@@ -1287,6 +1381,7 @@ document.addEventListener('keydown', (e)=>{
     openPalette();
     return;
   }
+  if(e.key === '?' && !isTyping){ e.preventDefault(); openShortcutsModal(); return; }
   if(isTyping || e.metaKey || e.ctrlKey || e.altKey) return;
   if(e.key === '/'){ e.preventDefault(); document.getElementById('searchBox').focus(); }
   else if(e.key === 's'){ openScheduleModal(); }
@@ -1331,6 +1426,11 @@ function collectSearchResults(q){
       out.push({ type:'Deadline', title: d.title + (d.date ? ' — ' + fmtDeadlineDate(d.date) : ''), action:()=>jumpToDeadline(i) });
     }
   });
+  events.forEach((e,i)=>{
+    if((e.title||'').toLowerCase().includes(query)){
+      out.push({ type:'Event', title: e.title + (e.date ? ' — ' + fmtDeadlineDate(e.date) : '') + (e.time ? ' ' + e.time : ''), action:()=>jumpToEvent(i) });
+    }
+  });
   todos.forEach((t,i)=>{
     if((t.text||'').toLowerCase().includes(query)){
       out.push({ type:'To-Do', title: t.text, action:()=>jumpToTodo(i) });
@@ -1341,6 +1441,27 @@ function collectSearchResults(q){
       out.push({ type:'Co-op', title: c.company + (c.role ? ' — ' + c.role : ''), action:()=>jumpToCoop(i) });
     }
   });
+  transactions.forEach((t,i)=>{
+    if((t.description||'').toLowerCase().includes(query) || (t.category||'').toLowerCase().includes(query)){
+      const sign = t.type === 'income' ? '+' : '−';
+      out.push({ type:'Transaction', title: `${t.description} ${sign}$${Number(t.amount).toFixed(2)}${t.date ? ' — ' + fmtDeadlineDate(t.date) : ''}`, action:()=>jumpToTransaction(i) });
+    }
+  });
+  recurringBills.forEach((b,i)=>{
+    if((b.name||'').toLowerCase().includes(query)){
+      out.push({ type:'Recurring Bill', title: `${b.name} — $${Number(b.amount).toFixed(2)} due ${b.day}${ordinalSuffix(b.day)}`, action:()=>jumpToBill(i) });
+    }
+  });
+  habits.forEach((h,i)=>{
+    if((h.name||'').toLowerCase().includes(query)){
+      out.push({ type:'Habit', title: h.name, action:()=>jumpToHabit(i) });
+    }
+  });
+  grades.forEach((g,i)=>{
+    if((g.name||'').toLowerCase().includes(query)){
+      out.push({ type:'Course', title: g.name + (g.percent !== '' && g.percent !== null ? ` — ${g.percent}%` : ''), action:()=>jumpToGrade(i) });
+    }
+  });
   return out.slice(0, 8);
 }
 function jumpToClass(i){
@@ -1348,6 +1469,17 @@ function jumpToClass(i){
 }
 function jumpToDeadline(i){
   highlightEl(document.querySelector(`#deadlineList .deadline[data-idx="${i}"]`));
+}
+// Events only live on the calendar (no dashboard card of their own), so
+// "jumping" to one means opening the Schedule modal on that day.
+function jumpToEvent(i){
+  const ev = events[i];
+  if(!ev) return;
+  openScheduleModal();
+  if(ev.date){
+    const [y,m,d] = ev.date.split('-').map(Number);
+    jumpToDate(y, m-1, d, 'day');
+  }
 }
 function jumpToTodo(i){
   todoFilter = 'all';
@@ -1358,6 +1490,22 @@ function jumpToTodo(i){
 }
 function jumpToCoop(i){
   highlightEl(document.querySelector(`#coopKanban .kanban-card[data-idx="${i}"]`));
+}
+function jumpToTransaction(i){
+  openBudgetModal();
+  highlightEl(document.querySelector(`#transactionList .txn-row[data-idx="${i}"]`));
+}
+function jumpToBill(i){
+  openBudgetModal();
+  highlightEl(document.querySelector(`#recurringList .recurring-row[data-idx="${i}"]`));
+}
+function jumpToHabit(i){
+  openHabitsModal();
+  highlightEl(document.querySelector(`#habitsBody .habit-row[data-idx="${i}"]`));
+}
+function jumpToGrade(i){
+  openGradesModal();
+  highlightEl(document.querySelector(`#gradesBody tr[data-idx="${i}"]`));
 }
 function handleSearchInput(q){
   searchResults = collectSearchResults(q);
@@ -1835,11 +1983,126 @@ let deadlines = load('wit_deadlines', [
   {date:'2026-10-27', title:'ENG 202 Essay', link:''},
   {date:'2026-11-01', title:'PHYS 102 Lab Report', link:''}
 ]);
+// Timed calendar activities (appointments, meetings, recurring commitments
+// — anything with a clock time rather than an end-of-day due date). These
+// only ever live on the Schedule calendar, not the Upcoming Deadlines
+// card. Addable via Quick Capture (one-off only) or the "+ Add Event"
+// form on the Schedule modal (supports recurrence). See addEvent/
+// deleteEvent/eventOccursOnDate below.
+//
+// Shape: { id, date, time, endTime, title, recurrence }
+//   date/time/endTime: date is the FIRST occurrence's date (or the only
+//     date, for a non-repeating event); time/endTime are display labels
+//     ("3:00 PM") or '' for an all-day/untimed entry.
+//   recurrence: null for a one-off event, or
+//     { freq:'daily'|'weekly'|'monthly', interval:Number,
+//       byDay:[0-6]|null (weekly only; defaults to date's weekday),
+//       end: {type:'never'} | {type:'until', date} | {type:'count', n} }
+let events = load('wit_events', []);
+function newEventId(){
+  return 'ev_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+function addEvent(date, time, title, opts){
+  const ev = Object.assign(
+    { id: newEventId(), date, time: time || '', endTime:'', title, recurrence: null },
+    opts || {}
+  );
+  events.push(ev);
+  save('wit_events', events);
+  return ev;
+}
+function deleteEvent(i){
+  const removed = events[i];
+  events.splice(i,1);
+  save('wit_events', events);
+  if(document.getElementById('scheduleOverlay').classList.contains('open')) renderScheduleView();
+  toast(`Removed "${removed.title}"`, false, ()=>{
+    events.push(removed); save('wit_events', events);
+    if(document.getElementById('scheduleOverlay').classList.contains('open')) renderScheduleView();
+  });
+}
+// "Skip this one": adds the given date to the event's exception list, so
+// eventOccursOnDate() stops matching it there while every other
+// occurrence (past and future) is untouched.
+function skipEventOccurrence(i, iso){
+  const ev = events[i];
+  if(!ev) return;
+  ev.exceptions = ev.exceptions || [];
+  if(ev.exceptions.includes(iso)) return;
+  ev.exceptions.push(iso);
+  save('wit_events', events);
+  renderScheduleView();
+  toast(`Skipped "${ev.title}" on ${fmtDeadlineDate(iso)}`, false, ()=>{
+    ev.exceptions = ev.exceptions.filter(d => d !== iso);
+    save('wit_events', events);
+    renderScheduleView();
+  });
+}
+// "End series": truncates the recurrence so nothing after (and including)
+// this date fires anymore, without touching occurrences already past.
+function endRecurrenceHere(i, iso){
+  const ev = events[i];
+  if(!ev || !ev.recurrence) return;
+  const prevEnd = ev.recurrence.end;
+  const cutoff = new Date(iso + 'T00:00:00'); cutoff.setDate(cutoff.getDate() - 1);
+  ev.recurrence.end = { type:'until', date: localISODate(cutoff) };
+  save('wit_events', events);
+  renderScheduleView();
+  toast(`"${ev.title}" won't repeat after ${fmtDeadlineDate(localISODate(cutoff))}`, false, ()=>{
+    ev.recurrence.end = prevEnd;
+    save('wit_events', events);
+    renderScheduleView();
+  });
+}
+// Reverses to12h()'s label ("3:00 PM") back into the 24h "HH:MM" an
+// <input type="time"> needs, so editing an event can repopulate its time
+// fields from what was actually stored.
+function to24h(label){
+  if(!label) return '';
+  const m = label.match(/(\d{1,2}):(\d{2})\s?(AM|PM)/i);
+  if(!m) return '';
+  let h = parseInt(m[1],10) % 12;
+  if(m[3].toUpperCase() === 'PM') h += 12;
+  return String(h).padStart(2,'0') + ':' + m[2];
+}
+// Opens the same "+ Add Event" form pre-filled with an existing event's
+// data, in edit mode (submitEventForm() checks editingEventId to decide
+// whether to update in place instead of creating a new one).
+let editingEventId = null;
+function openEditEventForm(i){
+  const ev = events[i];
+  if(!ev) return;
+  editingEventId = ev.id;
+  const form = document.getElementById('addEventForm');
+  if(!form.classList.contains('open')) toggleForm('addEventForm');
+  document.getElementById('evTitle').value = ev.title;
+  document.getElementById('evDate').value = ev.date;
+  document.getElementById('evStartTime').value = to24h(ev.time);
+  document.getElementById('evEndTime').value = to24h(ev.endTime);
+  const rec = ev.recurrence;
+  document.getElementById('evRepeat').value = (rec && rec.freq) ? rec.freq : 'none';
+  document.getElementById('evInterval').value = (rec && rec.interval) ? rec.interval : 1;
+  evSelectedDays = new Set((rec && rec.byDay) ? rec.byDay : []);
+  const endType = (rec && rec.end) ? rec.end.type : 'never';
+  document.getElementById('evEndType').value = (endType === 'until' || endType === 'count') ? endType : 'never';
+  document.getElementById('evEndUntil').value = (rec && rec.end && rec.end.type === 'until') ? rec.end.date : '';
+  document.getElementById('evEndCount').value = (rec && rec.end && rec.end.type === 'count') ? rec.end.n : 10;
+  renderEventFormConditionals();
+  const submitBtn = document.getElementById('evFormSubmitBtn');
+  if(submitBtn) submitBtn.textContent = 'Save Changes';
+  setTimeout(()=> document.getElementById('evTitle').focus(), 50);
+}
 function fmtDeadlineDate(iso){
   if(!iso) return '';
   const [y,m,d] = iso.split('-');
   const dt = new Date(+y, +m-1, +d);
   return dt.toLocaleDateString(undefined,{month:'short', day:'numeric'});
+}
+// High-priority items get flagged "due soon" earlier (5 days out) than
+// Medium (48h, the old fixed behavior) or Low (24h) — so a big project
+// doesn't just quietly wait until 2 days out to get your attention.
+function dueSoonWindowHours(priority){
+  return priority === 'High' ? 120 : priority === 'Low' ? 24 : 48;
 }
 function renderDeadlines(){
   deadlines.sort((a,b)=> (a.date||'').localeCompare(b.date||''));
@@ -1852,24 +2115,28 @@ function renderDeadlines(){
   const now = new Date();
   deadlines.forEach((d,i)=>{
     const row = document.createElement('div');
+    const priority = d.priority || 'Medium';
     let flagClass = '', flagLabel = '';
     if(d.date){
       const due = new Date(d.date + 'T23:59:59');
       const hoursUntil = (due - now) / 3600000;
       if(hoursUntil < 0){ flagClass = 'overdue'; flagLabel = 'Overdue'; }
-      else if(hoursUntil <= 48){ flagClass = 'due-soon'; flagLabel = 'Due soon'; }
+      else if(hoursUntil <= dueSoonWindowHours(priority)){ flagClass = 'due-soon'; flagLabel = 'Due soon'; }
     }
     row.className = 'deadline' + (flagClass ? ' ' + flagClass : '');
     row.dataset.idx = i;
-    const priority = d.priority || 'Medium';
+    const repeatBadge = d.repeat === 'weekly'
+      ? `<span class="deadline-flag" style="background:rgba(44,175,197,.18);color:var(--wit-teal);cursor:pointer;" onclick="toggleDeadlineRepeat(${i})" title="Repeats weekly — click to turn off">↻ Weekly</span>`
+      : '';
     row.innerHTML = `
       <div class="date">${fmtDeadlineDate(d.date)}</div>
       <div class="info">
         <b contenteditable="true" onblur="editDeadline(${i},'title',this.textContent)">${esc(d.title)}</b>
-        <span class="priority-tag priority-${priority}" onclick="cyclePriority(${i})" title="Click to change priority">${priority}</span>${flagClass ? `<span class="deadline-flag ${flagClass}">${flagLabel}</span>` : ''}
+        <span class="priority-tag priority-${priority}" onclick="cyclePriority(${i})" title="Click to change priority">${priority}</span>${flagClass ? `<span class="deadline-flag ${flagClass}">${flagLabel}</span>` : ''}${repeatBadge}
         ${d.link ? `<a href="${esc(d.link)}" target="_blank">View Details</a>` : `<a href="#" onclick="event.preventDefault(); const l=prompt('Add a link:'); if(l){editDeadline(${i},'link',l);}">Add link</a>`}
       </div>
-      <button class="del-btn" onclick="deleteDeadline(${i})">✕</button>`;
+      <button class="icon-btn" style="margin-right:4px;" onclick="completeDeadline(${i})" title="${d.repeat === 'weekly' ? 'Complete — rolls forward 7 days' : 'Complete'}" aria-label="Complete ${esc(d.title)}">✓</button>
+      <button class="del-btn" onclick="deleteDeadline(${i})" aria-label="Delete ${esc(d.title)}">✕</button>`;
     el.appendChild(row);
   });
   staggerIn(el, '.deadline');
@@ -1885,19 +2152,43 @@ function addDeadline(){
   const title = document.getElementById('deadlineTitle').value.trim();
   const link = document.getElementById('deadlineLink').value.trim();
   const priority = document.getElementById('deadlinePriority').value;
+  const repeat = document.getElementById('deadlineRepeat').checked ? 'weekly' : 'none';
   if(!title) return;
-  const newDeadline = {date, title, link, priority};
+  const newDeadline = {date, title, link, priority, repeat};
   deadlines.push(newDeadline);
   save('wit_deadlines', deadlines); renderDeadlines();
   document.getElementById('deadlineDate').value = '';
   document.getElementById('deadlineTitle').value = '';
   document.getElementById('deadlineLink').value = '';
+  document.getElementById('deadlineRepeat').checked = false;
   toggleForm('deadlineForm');
   highlightEl(document.querySelectorAll('#deadlineList .deadline')[deadlines.indexOf(newDeadline)]);
 }
 function editDeadline(i, field, val){
   deadlines[i][field] = (typeof val === 'string') ? val.trim() : val;
   save('wit_deadlines', deadlines); renderDeadlines();
+}
+function toggleDeadlineRepeat(i){
+  deadlines[i].repeat = deadlines[i].repeat === 'weekly' ? 'none' : 'weekly';
+  save('wit_deadlines', deadlines); renderDeadlines();
+}
+// "Complete" a deadline: if it repeats weekly, roll it forward 7 days instead
+// of removing it — so recurring homework/readings don't need re-typing every
+// week. Non-repeating deadlines just get removed (same as delete).
+function completeDeadline(i){
+  const d = deadlines[i];
+  if(d.repeat === 'weekly' && d.date){
+    const next = new Date(d.date + 'T00:00:00');
+    next.setDate(next.getDate() + 7);
+    const advanced = Object.assign({}, d, { date: localISODate(next) });
+    deadlines.splice(i, 1, advanced);
+    save('wit_deadlines', deadlines); renderDeadlines();
+    toast(`"${d.title}" completed — next due ${fmtDeadlineDate(advanced.date)}`, false, ()=>{
+      deadlines.splice(i, 1, d); save('wit_deadlines', deadlines); renderDeadlines();
+    });
+  } else {
+    deleteDeadline(i);
+  }
 }
 function deleteDeadline(i){
   const removed = deadlines[i];
@@ -2104,67 +2395,237 @@ function localISODate(d){
 const WEEKDAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ============ Quick capture: parse free text into a deadline, transaction, or todo ============ */
-function parseQuickCapture(text){
-  const t = text.trim();
-  const moneyMatch = t.match(/\$\s?(\d+(?:\.\d{1,2})?)/);
-  if(moneyMatch){
-    const amount = parseFloat(moneyMatch[1]);
-    const isIncome = /\b(income|paycheck|got paid|earned)\b/i.test(t) || /^\+/.test(t);
-    let description = t.replace(moneyMatch[0], '').replace(/^[\s,:+-]+|[\s,:-]+$/g,'');
-    return { kind:'transaction', amount, type: isIncome ? 'income' : 'expense', description: description || (isIncome ? 'Income' : 'Expense') };
-  }
-  const isoMatch = t.match(/(\d{4}-\d{2}-\d{2})/);
-  const WEEKDAYS_FULL = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-  const WEEKDAYS_ABBR = ['sun','mon','tue','wed','thu','fri','sat'];
-  let dateStr = null, titleText = t;
-  const stripLead = (s) => s.replace(/^\s*due[:\s]*/i,'').replace(/^[\s,:-]+|[\s,:-]+$/g,'');
-  if(isoMatch){
-    dateStr = isoMatch[1];
-    titleText = stripLead(t.replace(isoMatch[0], ''));
-  } else {
-    const lower = t.toLowerCase();
-    if(/\btomorrow\b/.test(lower)){
-      const d = new Date(); d.setDate(d.getDate()+1);
-      dateStr = localISODate(d);
-      titleText = stripLead(t.replace(/tomorrow/i,''));
-    } else if(/\btoday\b/.test(lower)){
-      dateStr = localISODate(new Date());
-      titleText = stripLead(t.replace(/today/i,''));
-    } else {
-      for(let i=0;i<WEEKDAYS_FULL.length;i++){
-        const re = new RegExp('\\b(' + WEEKDAYS_FULL[i] + '|' + WEEKDAYS_ABBR[i] + ')\\b','i');
-        const m = t.match(re);
-        if(m){
-          const now = new Date();
-          let diff = i - now.getDay();
-          if(diff <= 0) diff += 7;
-          const d = new Date(now); d.setDate(now.getDate()+diff);
-          dateStr = localISODate(d);
-          titleText = stripLead(t.replace(re,''));
-          break;
-        }
-      }
+/* ---- Quick Capture parsing --------------------------------------------
+   Goal: NEVER silently drop what you typed. Every input resolves to one
+   of transaction / deadline / to-do — worst case it just becomes a plain
+   to-do with your exact text, same as the original behavior. Everything
+   below is about recognizing MORE inputs correctly before falling back,
+   not about becoming stricter. ------------------------------------------- */
+const QC_WEEKDAYS_FULL = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+const QC_WEEKDAYS_ABBR = ['sun','mon','tue','wed','thu','fri','sat'];
+const QC_MONTHS_FULL = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+const QC_MONTHS_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const QC_CATEGORY_KEYWORDS = [
+  [/\b(lunch|dinner|breakfast|coffee|food|pizza|restaurant|takeout|take-out|groceries|grocery|snack)\b/i, 'Food'],
+  [/\b(gas|uber|lyft|parking|mbta|subway|bus|train|transport|toll)\b/i, 'Transport'],
+  [/\b(textbook|book|tuition|supplies|printing|school)\b/i, 'School'],
+  [/\b(rent|utilities|electric|wifi|internet)\b/i, 'Housing'],
+  [/\b(movie|game|concert|fun|entertainment|steam)\b/i, 'Entertainment'],
+];
+function guessCategory(desc){
+  for(const [re, cat] of QC_CATEGORY_KEYWORDS){ if(re.test(desc)) return cat; }
+  return 'Other';
+}
+// Trims a matched date/priority phrase out of the text and cleans up
+// whatever connector words ("due", "on", "by") and stray punctuation it
+// leaves behind, from either end.
+function qcStripPhrase(t, phrase){
+  let s = t.replace(phrase, ' ').replace(/\s{2,}/g, ' ').trim();
+  // Loop rather than a single pass: "Due on the 15th" leaves "Due on"
+  // behind after the date phrase is removed, and a single strip only
+  // catches the trailing "on" — repeat until nothing more connector-word
+  // is left at either end.
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/^(due|on|by)\b[:\s]*/i, '').replace(/[\s:]*\b(due|on|by)$/i, '').trim();
+  } while(s !== prev);
+  return s.replace(/^[\s,:+-]+|[\s,:-]+$/g, '').trim();
+}
+// Finds the first recognizable date phrase anywhere in the text (leading,
+// trailing, or in the middle) and returns {dateStr, text} with that phrase
+// removed — or null if nothing date-like is present. Understands ISO
+// dates, M/D(/Y), month-name dates, "today/tomorrow/yesterday", "eod",
+// "in N day(s)/week(s)", and weekday names (with optional "next").
+function extractDatePhrase(text){
+  const t = text;
+
+  let m = t.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if(m) return { dateStr: m[1], text: qcStripPhrase(t, m[0]) };
+
+  m = t.match(/\b(\d{1,2})[\/](\d{1,2})(?:[\/](\d{2,4}))?\b/);
+  if(m){
+    const now = new Date();
+    const month = parseInt(m[1],10) - 1, day = parseInt(m[2],10);
+    let year = m[3] ? (m[3].length === 2 ? 2000 + parseInt(m[3],10) : parseInt(m[3],10)) : now.getFullYear();
+    let d = new Date(year, month, day);
+    if(!isNaN(d)){
+      if(!m[3] && d < new Date(now.getFullYear(), now.getMonth(), now.getDate())) d.setFullYear(year + 1);
+      return { dateStr: localISODate(d), text: qcStripPhrase(t, m[0]) };
     }
   }
-  if(dateStr){
-    return { kind:'deadline', date: dateStr, title: titleText || 'Untitled deadline' };
+
+  const monthAlt = '(' + QC_MONTHS_FULL.join('|') + '|' + QC_MONTHS_ABBR.join('|') + ')';
+  m = t.match(new RegExp('\\b' + monthAlt + '\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b', 'i'))
+   || t.match(new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+' + monthAlt + '\\.?\\b', 'i'));
+  if(m){
+    const word = isNaN(m[1]) ? m[1] : m[2];
+    const dayNum = isNaN(m[1]) ? m[2] : m[1];
+    let monthIdx = QC_MONTHS_FULL.indexOf(word.toLowerCase());
+    if(monthIdx === -1) monthIdx = QC_MONTHS_ABBR.indexOf(word.toLowerCase());
+    if(monthIdx !== -1){
+      const now = new Date();
+      let d = new Date(now.getFullYear(), monthIdx, parseInt(dayNum,10));
+      if(d < new Date(now.getFullYear(), now.getMonth(), now.getDate())) d.setFullYear(now.getFullYear() + 1);
+      return { dateStr: localISODate(d), text: qcStripPhrase(t, m[0]) };
+    }
   }
+
+  // Bare ordinal day-of-month with no month name attached: "the 15th",
+  // "due on the 3rd", "by the 21st". Assumes the current month, rolling to
+  // next month if that day already passed — and only matches when the
+  // resulting date is actually valid (guards against something like "the
+  // 31st" landing on a 30-day month).
+  m = t.match(/\bthe\s+(\d{1,2})(?:st|nd|rd|th)\b/i);
+  if(m){
+    const day = parseInt(m[1],10);
+    const now = new Date();
+    let d = new Date(now.getFullYear(), now.getMonth(), day);
+    if(d.getDate() === day){
+      if(d < new Date(now.getFullYear(), now.getMonth(), now.getDate())){
+        const rolled = new Date(now.getFullYear(), now.getMonth()+1, day);
+        if(rolled.getDate() === day) d = rolled;
+      }
+      return { dateStr: localISODate(d), text: qcStripPhrase(t, m[0]) };
+    }
+  }
+
+  m = t.match(/\b(eod|end of day)\b/i);
+  if(m) return { dateStr: localISODate(new Date()), text: qcStripPhrase(t, m[0]) };
+
+  m = t.match(/\btoday\b/i);
+  if(m) return { dateStr: localISODate(new Date()), text: qcStripPhrase(t, m[0]) };
+
+  m = t.match(/\b(tomorrow|tmrw|tmr)\b/i);
+  if(m){ const d = new Date(); d.setDate(d.getDate()+1); return { dateStr: localISODate(d), text: qcStripPhrase(t, m[0]) }; }
+
+  m = t.match(/\byesterday\b/i);
+  if(m){ const d = new Date(); d.setDate(d.getDate()-1); return { dateStr: localISODate(d), text: qcStripPhrase(t, m[0]) }; }
+
+  m = t.match(/\bin\s+(\d+)\s*(day|days|week|weeks)\b/i);
+  if(m){
+    const n = parseInt(m[1],10);
+    const d = new Date();
+    d.setDate(d.getDate() + (m[2].toLowerCase().startsWith('week') ? n*7 : n));
+    return { dateStr: localISODate(d), text: qcStripPhrase(t, m[0]) };
+  }
+
+  for(let i=0;i<QC_WEEKDAYS_FULL.length;i++){
+    const re = new RegExp('\\b(next\\s+)?(' + QC_WEEKDAYS_FULL[i] + '|' + QC_WEEKDAYS_ABBR[i] + ')\\b','i');
+    const wm = t.match(re);
+    if(wm){
+      const now = new Date();
+      let diff = i - now.getDay();
+      if(wm[1] || diff <= 0) diff += 7; // "next X" always jumps a full week; a bare weekday means the soonest one
+      const d = new Date(now); d.setDate(now.getDate()+diff);
+      return { dateStr: localISODate(d), text: qcStripPhrase(t, wm[0]) };
+    }
+  }
+  return null;
+}
+// Finds a clock time anywhere in the text: "3pm", "3 pm", "3:30pm",
+// "at 3:30 PM", or 24-hour "15:30". 12-hour forms without a colon require
+// an explicit am/pm so a bare number (a page range, a room number) never
+// gets misread as a time. Returns {label, text} with the phrase removed,
+// or null.
+function extractTimePhrase(text){
+  let m = text.match(/\b(?:at\s+)?(\d{1,2})(?::([0-5]\d))?\s?(am|pm)\b/i);
+  if(m){
+    let h = parseInt(m[1],10) % 12;
+    if(m[3].toLowerCase() === 'pm') h += 12;
+    const min = m[2] ? parseInt(m[2],10) : 0;
+    const label = new Date(2000,0,1,h,min).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    return { label, text: qcStripPhrase(text, m[0]) };
+  }
+  m = text.match(/\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if(m){
+    const label = new Date(2000,0,1,parseInt(m[1],10),parseInt(m[2],10)).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    return { label, text: qcStripPhrase(text, m[0]) };
+  }
+  return null;
+}
+// Pulls a trailing/embedded "!high" / "!h" / "!medium" / "!low" / "!l" or a
+// bare "!!" marker out of the text and returns {priority, text}. priority
+// is null (not "Medium") when no marker was found, so callers can tell
+// "explicitly medium" apart from "unspecified."
+function extractPriority(text){
+  let m = text.match(/\B!(high|h|medium|med|m|low|l)\b/i);
+  if(m){
+    const p = m[1].toLowerCase();
+    const priority = p.startsWith('h') ? 'High' : p.startsWith('l') ? 'Low' : 'Medium';
+    return { priority, text: qcStripPhrase(text, m[0]) };
+  }
+  m = text.match(/!{2,}/);
+  if(m) return { priority: 'High', text: qcStripPhrase(text, m[0]) };
+  return { priority: null, text };
+}
+function parseQuickCapture(text){
+  let t = (text || '').trim();
+  if(!t) return { kind:'todo', text:'' };
+
+  const pr = extractPriority(t);
+  const priority = pr.priority;
+  t = pr.text;
+
+  // ---- money -> transaction. Accepts "$12", "$12.50", "12 dollars", a
+  // leading "+"/"-" sign (only when it opens the whole entry, so "pages
+  // 10-15" doesn't misfire as "-15"), and "income"/"paycheck" as income
+  // cues. ----
+  const moneyMatch = t.match(/^([+-])(\d+(?:\.\d{1,2})?)\b/) || t.match(/([+-])?\$\s?(\d+(?:\.\d{1,2})?)/) || t.match(/([+-])?\b(\d+(?:\.\d{1,2})?)\s?(?:dollars|bucks)\b/i);
+  if(moneyMatch){
+    const sign = moneyMatch[1] || '';
+    const amount = parseFloat(moneyMatch[2]);
+    let description = t.replace(moneyMatch[0], ' ');
+    const dateInfo = extractDatePhrase(description);
+    let txnDate = todayISO();
+    if(dateInfo){ txnDate = dateInfo.dateStr; description = dateInfo.text; }
+    description = description.replace(/\s{2,}/g,' ').replace(/^[\s,:+-]+|[\s,:-]+$/g,'').trim();
+    const isIncome = sign === '+' || (sign !== '-' && /\b(income|paycheck|got paid|earned|refund|deposit|payout)\b/i.test(t));
+    const type = isIncome ? 'income' : 'expense';
+    const category = type === 'income' ? 'Income' : guessCategory(description);
+    return { kind:'transaction', amount, type, date: txnDate, category, description: description || (type === 'income' ? 'Income' : 'Expense') };
+  }
+
+  // ---- a clock time anywhere -> a one-off calendar activity (an
+  // appointment/meeting), not a due-date deadline. A date phrase alongside
+  // it sets which day; no date phrase defaults to today. Either way this
+  // goes straight onto the Schedule calendar. ----
+  const timeInfo = extractTimePhrase(t);
+  const dateSource = timeInfo ? timeInfo.text : t;
+  const dateInfo = extractDatePhrase(dateSource);
+  if(timeInfo){
+    const title = (dateInfo ? dateInfo.text : dateSource) || 'Untitled event';
+    return { kind:'event', date: dateInfo ? dateInfo.dateStr : todayISO(), time: timeInfo.label, title };
+  }
+
+  // ---- otherwise, any recognizable date phrase -> deadline (also shows
+  // up on the calendar automatically, since the calendar reads from the
+  // same `deadlines` list) ----
+  if(dateInfo){
+    return { kind:'deadline', date: dateInfo.dateStr, title: dateInfo.text || 'Untitled deadline', priority: priority || 'Medium' };
+  }
+
+  // ---- fallback: plain to-do — always captures SOMETHING, never drops it ----
   return { kind:'todo', text: t };
 }
 function handleQuickCapture(raw){
   const parsed = parseQuickCapture(raw);
   if(parsed.kind === 'transaction'){
-    transactions.push({ date: todayISO(), description: parsed.description, category: parsed.type === 'income' ? 'Income' : 'Other', amount: parsed.amount, type: parsed.type });
+    transactions.push({ date: parsed.date || todayISO(), description: parsed.description, category: parsed.category, amount: parsed.amount, type: parsed.type });
     save('wit_transactions', transactions);
     renderBudget();
-    toast(`Logged ${parsed.type === 'income' ? '+' : '−'}$${parsed.amount.toFixed(2)} — ${parsed.description}`);
+    const whenNote = parsed.date && parsed.date !== todayISO() ? ` (${fmtDeadlineDate(parsed.date)})` : '';
+    toast(`Logged ${parsed.type === 'income' ? '+' : '−'}$${parsed.amount.toFixed(2)} — ${parsed.description} · ${parsed.category}${whenNote}`);
   } else if(parsed.kind === 'deadline'){
-    const nd = { date: parsed.date, title: parsed.title, link:'', priority:'Medium' };
+    const nd = { date: parsed.date, title: parsed.title, link:'', priority: parsed.priority || 'Medium', repeat:'none' };
     deadlines.push(nd);
     save('wit_deadlines', deadlines);
     renderDeadlines();
-    toast(`Added deadline: ${parsed.title} (${fmtDeadlineDate(parsed.date)})`);
+    toast(`Added deadline: ${parsed.title} (${fmtDeadlineDate(parsed.date)}) · ${nd.priority} priority — on the calendar too`);
     highlightEl(document.querySelectorAll('#deadlineList .deadline')[deadlines.indexOf(nd)]);
+  } else if(parsed.kind === 'event'){
+    addEvent(parsed.date, parsed.time, parsed.title);
+    toast(`Added to calendar: ${parsed.title} — ${fmtDeadlineDate(parsed.date)}${parsed.time ? ' at ' + parsed.time : ''}`);
   } else {
     todos.push({ text: parsed.text, done:false, category:'Personal' });
     save('wit_todos', todos);
@@ -2530,7 +2991,7 @@ function renderRecurring(){
     return;
   }
   el.innerHTML = recurringBills.map((b,i)=>`
-    <div class="recurring-row">
+    <div class="recurring-row" data-idx="${i}">
       <span contenteditable="true" onblur="editBill(${i},'name',this.textContent)">${esc(b.name)}</span>
       <span style="display:flex;align-items:center;gap:6px;">
         <span contenteditable="true" onblur="editBill(${i},'amount',this.textContent)">$${Number(b.amount).toFixed(2)}</span>
@@ -2582,7 +3043,7 @@ function renderTransactions(){
     .sort((a,b) => (b.date||'').localeCompare(a.date||''));
   el.innerHTML = sorted.slice(0,25).map(t=>{
     const sign = t.type === 'income' ? '+' : '−';
-    return `<div class="txn-row">
+    return `<div class="txn-row" data-idx="${t._idx}">
       <span>${fmtDeadlineDate(t.date)} · ${esc(t.description)} <span style="color:var(--muted);">(${esc(t.category||'Other')})</span></span>
       <span style="display:flex;align-items:center;gap:8px;">
         <span class="txn-amount ${t.type}">${sign}$${Number(t.amount).toFixed(2)}</span>
@@ -2627,11 +3088,97 @@ function localISO(date){
 }
 function sameDay(a,b){ return localISO(a) === localISO(b); }
 
+// Does a (possibly recurring) event land on this date? A plain one-off
+// event (recurrence null/'none') just checks date equality — the same
+// behavior as before recurrence existed. A recurring event checks the
+// frequency/interval pattern, respects an "until" cutoff directly, and
+// for a "count" cutoff walks forward from the start date to work out
+// which occurrence number this date would be (bounded loops only, no
+// unbounded recursion, so a bad interval can't hang the page).
+function eventOccursOnDate(ev, date){
+  if(!ev.date) return false;
+  const iso = localISO(date);
+  if(iso < ev.date) return false;
+  if(ev.exceptions && ev.exceptions.includes(iso)) return false;
+  const rec = ev.recurrence;
+  if(!rec || !rec.freq || rec.freq === 'none') return iso === ev.date;
+
+  const interval = Math.max(1, parseInt(rec.interval, 10) || 1);
+  const start = new Date(ev.date + 'T00:00:00');
+  const cur = new Date(iso + 'T00:00:00');
+  if(rec.end && rec.end.type === 'until' && rec.end.date && iso > rec.end.date) return false;
+  const countLimit = (rec.end && rec.end.type === 'count') ? Math.max(1, parseInt(rec.end.n, 10) || 1) : null;
+
+  if(rec.freq === 'daily'){
+    const diffDays = Math.round((cur - start) / 86400000);
+    if(diffDays < 0 || diffDays % interval !== 0) return false;
+    if(countLimit !== null && (diffDays / interval) >= countLimit) return false;
+    return true;
+  }
+  if(rec.freq === 'monthly'){
+    if(cur.getDate() !== start.getDate()) return false;
+    const monthDiff = (cur.getFullYear() - start.getFullYear()) * 12 + (cur.getMonth() - start.getMonth());
+    if(monthDiff < 0 || monthDiff % interval !== 0) return false;
+    if(countLimit !== null && (monthDiff / interval) >= countLimit) return false;
+    return true;
+  }
+  if(rec.freq === 'weekly'){
+    const byDay = (rec.byDay && rec.byDay.length) ? rec.byDay : [start.getDay()];
+    if(!byDay.includes(cur.getDay())) return false;
+    const startWeekStart = new Date(start); startWeekStart.setDate(start.getDate() - start.getDay());
+    const curWeekStart = new Date(cur); curWeekStart.setDate(cur.getDate() - cur.getDay());
+    const weekDiff = Math.round((curWeekStart - startWeekStart) / (7 * 86400000));
+    if(weekDiff < 0 || weekDiff % interval !== 0) return false;
+    if(countLimit !== null){
+      // No closed-form index when specific weekdays are involved — count
+      // qualifying days from the start up through `cur` (bounded by the
+      // distance between them, so this never runs long).
+      let count = 0;
+      for(let d = new Date(start); d <= cur; d.setDate(d.getDate() + 1)){
+        const dWeekStart = new Date(d); dWeekStart.setDate(d.getDate() - d.getDay());
+        const dWeekDiff = Math.round((dWeekStart - startWeekStart) / (7 * 86400000));
+        if(dWeekDiff >= 0 && dWeekDiff % interval === 0 && byDay.includes(d.getDay())){
+          if(sameDay(d, cur)) return count < countLimit;
+          count++;
+        }
+      }
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+function to12h(hhmm){
+  if(!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  if(isNaN(h) || isNaN(m)) return '';
+  return new Date(2000,0,1,h,m).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+}
+const RECUR_DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function summarizeRecurrence(rec){
+  if(!rec || !rec.freq || rec.freq === 'none') return '';
+  const interval = Math.max(1, parseInt(rec.interval, 10) || 1);
+  const unitWord = { daily:'daily', weekly:'weekly', monthly:'monthly' }[rec.freq];
+  const unitPlural = { daily:'days', weekly:'weeks', monthly:'months' }[rec.freq];
+  let base = interval > 1 ? `every ${interval} ${unitPlural}` : unitWord;
+  if(rec.freq === 'weekly' && rec.byDay && rec.byDay.length){
+    base += ' on ' + rec.byDay.slice().sort().map(d => RECUR_DAY_ABBR[d]).join('/');
+  }
+  let end = '';
+  if(rec.end){
+    if(rec.end.type === 'until' && rec.end.date) end = ` until ${fmtDeadlineDate(rec.end.date)}`;
+    else if(rec.end.type === 'count' && rec.end.n) end = `, ${rec.end.n}×`;
+  }
+  return `↻ Repeats ${base}${end}`;
+}
 function getEventsForDate(date){
   const classesForDay = schedule.length ? computeOccurrencesForDate(schedule, date) : [];
   const iso = localISO(date);
   const deadlinesForDay = deadlines.filter(d => d.date === iso);
-  return { classesForDay, deadlinesForDay };
+  const activitiesForDay = events.filter(e => eventOccursOnDate(e, date))
+    .slice()
+    .sort((a,b) => (a.time||'').localeCompare(b.time||''));
+  return { classesForDay, deadlinesForDay, activitiesForDay };
 }
 
 let scheduleViewState = { view: 'month', date: new Date() };
@@ -2643,6 +3190,122 @@ function openScheduleModal(){
 }
 function closeScheduleModal(){
   document.getElementById('scheduleOverlay').classList.remove('open');
+}
+
+/* ---- "+ Add Event" form (Schedule modal): title/date/time plus optional
+   recurrence — daily/weekly/monthly, specific weekdays, and an end
+   condition (never / on a date / after N occurrences), similar in spirit
+   to a Google Calendar "custom recurrence" picker but kept to one screen. */
+let evSelectedDays = new Set();
+function toggleAddEventForm(){
+  const form = document.getElementById('addEventForm');
+  const opening = !form.classList.contains('open');
+  if(opening){
+    editingEventId = null;
+    const submitBtn = document.getElementById('evFormSubmitBtn');
+    if(submitBtn) submitBtn.textContent = 'Add to Calendar';
+    document.getElementById('evTitle').value = '';
+    document.getElementById('evDate').value = localISO(scheduleViewState.date || new Date());
+    document.getElementById('evStartTime').value = '';
+    document.getElementById('evEndTime').value = '';
+    document.getElementById('evRepeat').value = 'none';
+    document.getElementById('evInterval').value = '1';
+    document.getElementById('evEndType').value = 'never';
+    document.getElementById('evEndUntil').value = '';
+    document.getElementById('evEndCount').value = '10';
+    // Left empty on purpose: if the user never touches the weekday chips,
+    // eventOccursOnDate() falls back to whatever weekday the Date field
+    // ends up set to. Pre-selecting a day here would go stale the moment
+    // they changed the date after opening the form.
+    evSelectedDays = new Set();
+    renderEventFormConditionals();
+  } else {
+    editingEventId = null;
+    const submitBtn = document.getElementById('evFormSubmitBtn');
+    if(submitBtn) submitBtn.textContent = 'Add to Calendar';
+  }
+  toggleForm('addEventForm');
+  if(opening) setTimeout(()=> document.getElementById('evTitle').focus(), 50);
+}
+function renderByDayChips(){
+  const el = document.getElementById('evByDayRow');
+  el.innerHTML = RECUR_DAY_ABBR.map((label,d)=>
+    `<button type="button" class="ics-btn" style="padding:4px 9px;font-size:10.5px;${evSelectedDays.has(d) ? 'background:var(--wit-teal);color:#0b1218;border-color:var(--wit-teal);' : ''}" onclick="toggleByDay(${d})">${label}</button>`
+  ).join('');
+}
+function toggleByDay(d){
+  if(evSelectedDays.has(d)) evSelectedDays.delete(d); else evSelectedDays.add(d);
+  renderByDayChips();
+}
+// Shows/hides the interval, weekday-picker, and "ends" rows based on the
+// current Repeat selection, and keeps the "every N ___" unit label in
+// sync with it. Called on open and whenever Repeat or End-type changes.
+function renderEventFormConditionals(){
+  const repeat = document.getElementById('evRepeat').value;
+  const repeats = repeat !== 'none';
+  document.getElementById('evIntervalRow').style.display = repeats ? 'flex' : 'none';
+  document.getElementById('evByDayRow').style.display = repeat === 'weekly' ? 'flex' : 'none';
+  document.getElementById('evByDayHint').style.display = repeat === 'weekly' ? 'block' : 'none';
+  document.getElementById('evEndRow').style.display = repeats ? 'flex' : 'none';
+  const unitLabel = { daily:'day(s)', weekly:'week(s)', monthly:'month(s)' }[repeat] || 'day(s)';
+  document.getElementById('evIntervalUnit').textContent = unitLabel;
+  if(repeat === 'weekly') renderByDayChips();
+  const endType = document.getElementById('evEndType').value;
+  document.getElementById('evEndUntil').style.display = endType === 'until' ? 'inline-block' : 'none';
+  document.getElementById('evEndCount').style.display = endType === 'count' ? 'inline-block' : 'none';
+}
+function submitEventForm(){
+  const title = document.getElementById('evTitle').value.trim();
+  const date = document.getElementById('evDate').value || todayISO();
+  if(!title){ toast('Give the event a title first.', true); return; }
+  const rawStart = document.getElementById('evStartTime').value;
+  const rawEnd = document.getElementById('evEndTime').value;
+  const time = to12h(rawStart);
+  const endTime = to12h(rawEnd);
+
+  const repeat = document.getElementById('evRepeat').value;
+  let recurrence = null;
+  if(repeat !== 'none'){
+    const interval = Math.max(1, parseInt(document.getElementById('evInterval').value, 10) || 1);
+    const endType = document.getElementById('evEndType').value;
+    let end = { type: 'never' };
+    if(endType === 'until'){
+      const untilDate = document.getElementById('evEndUntil').value;
+      if(untilDate) end = { type:'until', date: untilDate };
+    } else if(endType === 'count'){
+      const n = Math.max(1, parseInt(document.getElementById('evEndCount').value, 10) || 10);
+      end = { type:'count', n };
+    }
+    recurrence = { freq: repeat, interval, end };
+    if(repeat === 'weekly') recurrence.byDay = evSelectedDays.size ? Array.from(evSelectedDays).sort() : null;
+  }
+
+  const wasEditing = !!editingEventId;
+  let ev;
+  if(wasEditing){
+    const idx = events.findIndex(e => e.id === editingEventId);
+    if(idx === -1){
+      toast('Could not find that event to update — it may have been deleted.', true);
+      editingEventId = null;
+      return;
+    }
+    ev = Object.assign({}, events[idx], { date, time, endTime, title, recurrence });
+    events[idx] = ev;
+    save('wit_events', events);
+    editingEventId = null;
+  } else {
+    ev = addEvent(date, time, title, { endTime, recurrence });
+  }
+  toggleAddEventForm();
+  renderScheduleView();
+  const recurNote = summarizeRecurrence(recurrence);
+  toast(`${wasEditing ? 'Updated' : 'Added to calendar'}: ${title} — ${fmtDeadlineDate(date)}${time ? ' at ' + time : ''}${recurNote ? ' · ' + recurNote : ''}`);
+  scheduleViewState.date = new Date(date + 'T00:00:00');
+  scheduleViewState.view = 'day';
+  renderScheduleView();
+  const cards = document.querySelectorAll('#scheduleBody .class-card');
+  highlightEl(Array.from(cards).find(c => c.textContent.includes(title)) || cards[cards.length-1]);
+  void ev;
 }
 function setScheduleView(view){
   scheduleViewState.view = view;
@@ -2723,8 +3386,9 @@ function fmtClock(d){
   return d.toLocaleTimeString(undefined,{hour:'numeric', minute:'2-digit'});
 }
 function renderDayAgenda(date){
-  const { classesForDay, deadlinesForDay } = getEventsForDate(date);
-  if(classesForDay.length === 0 && deadlinesForDay.length === 0){
+  const { classesForDay, deadlinesForDay, activitiesForDay } = getEventsForDate(date);
+  const iso = localISO(date);
+  if(classesForDay.length === 0 && deadlinesForDay.length === 0 && activitiesForDay.length === 0){
     return '<div class="empty-note">Nothing scheduled for this day.</div>';
   }
   let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
@@ -2733,6 +3397,33 @@ function renderDayAgenda(date){
       <div class="time">${esc(c.time)}</div>
       <div class="name">${esc(c.name)}</div>
       <div class="room">${esc(c.room)}</div>
+    </div>`;
+  });
+  activitiesForDay.forEach((ev)=>{
+    const idx = events.indexOf(ev);
+    const timeLabel = ev.time ? (ev.endTime ? `${ev.time} – ${ev.endTime}` : ev.time) : 'All day';
+    const recurLabel = summarizeRecurrence(ev.recurrence);
+    const isRecurring = ev.recurrence && ev.recurrence.freq && ev.recurrence.freq !== 'none';
+    // Recurring events get three distinct actions (skip just today / stop
+    // repeating from today on / wipe the whole series) — matching how a
+    // real calendar separates "this one" from "this and following" from
+    // "all". A plain one-off event just gets edit + delete, as before.
+    const actionsHtml = isRecurring ? `
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button class="icon-btn" style="width:auto;padding:0 8px;gap:4px;" onclick="openEditEventForm(${idx})" title="Edit the whole series">✎ Edit</button>
+        <button class="icon-btn" style="width:auto;padding:0 8px;gap:4px;" onclick="skipEventOccurrence(${idx},'${iso}')" title="Skip just this date">⏭ Skip this one</button>
+        <button class="icon-btn" style="width:auto;padding:0 8px;gap:4px;" onclick="endRecurrenceHere(${idx},'${iso}')" title="Stop repeating after this date">⏹ End series</button>
+        <button class="del-btn" onclick="deleteEvent(${idx})" title="Delete every occurrence, past and future" aria-label="Delete entire series: ${esc(ev.title)}">✕ All</button>
+      </div>` : `
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="icon-btn" style="width:auto;padding:0 8px;gap:4px;" onclick="openEditEventForm(${idx})" title="Edit" aria-label="Edit ${esc(ev.title)}">✎ Edit</button>
+      </div>`;
+    html += `<div class="class-card" style="position:relative;">
+      ${!isRecurring ? `<button class="del-btn" style="position:absolute;top:4px;right:4px;" onclick="deleteEvent(${idx})" aria-label="Delete ${esc(ev.title)}">✕</button>` : ''}
+      <div class="time">${esc(timeLabel)}</div>
+      <div class="name">${esc(ev.title)}</div>
+      ${recurLabel ? `<div class="room">${esc(recurLabel)}</div>` : ''}
+      ${actionsHtml}
     </div>`;
   });
   deadlinesForDay.forEach(dl=>{
@@ -2761,12 +3452,13 @@ function renderWeekGrid(start){
   let html = '<div class="week-grid">';
   for(let i=0;i<7;i++){
     const day = new Date(start); day.setDate(start.getDate() + i);
-    const { classesForDay, deadlinesForDay } = getEventsForDate(day);
+    const { classesForDay, deadlinesForDay, activitiesForDay } = getEventsForDate(day);
     const isToday = sameDay(day, today);
     html += `<div class="week-day ${isToday?'today':''}" onclick="jumpToDate(${day.getFullYear()},${day.getMonth()},${day.getDate()},'day')">
       <div class="week-day-num">${day.toLocaleDateString(undefined,{weekday:'short'})} ${day.getDate()}</div>`;
     classesForDay.slice(0,3).forEach(c=>{ html += `<div class="mini-event">${esc(c.name)}</div>`; });
     if(classesForDay.length > 3) html += `<div class="mini-event">+${classesForDay.length-3} more</div>`;
+    activitiesForDay.forEach(ev=>{ html += `<div class="mini-event">${ev.time ? esc(ev.time) + ' — ' : ''}${esc(ev.title)}</div>`; });
     deadlinesForDay.forEach(dl=>{ html += `<div class="mini-event deadline">Due: ${esc(dl.title)}</div>`; });
     html += '</div>';
   }
@@ -2786,11 +3478,12 @@ function renderMonthGrid(refDate){
   for(let i=0;i<42;i++){
     const day = new Date(startDay); day.setDate(startDay.getDate() + i);
     const inMonth = day.getMonth() === month;
-    const { classesForDay, deadlinesForDay } = getEventsForDate(day);
+    const { classesForDay, deadlinesForDay, activitiesForDay } = getEventsForDate(day);
     const isToday = sameDay(day, today);
     html += `<div class="month-day ${inMonth?'':'other-month'} ${isToday?'today':''}" onclick="jumpToDate(${day.getFullYear()},${day.getMonth()},${day.getDate()},'day')">
       <div class="month-day-num">${day.getDate()}</div>`;
     if(classesForDay.length) html += `<span class="badge">${classesForDay.length} class${classesForDay.length>1?'es':''}</span>`;
+    if(activitiesForDay.length) html += `<span class="badge" style="background:rgba(44,175,197,.18);color:var(--wit-teal);">${activitiesForDay.length} event${activitiesForDay.length>1?'s':''}</span>`;
     if(deadlinesForDay.length) html += `<span class="dot"></span>`;
     html += '</div>';
   }
@@ -2809,8 +3502,8 @@ function renderYearGrid(refDate){
     for(let i=0;i<42;i++){
       const day = new Date(startDay); day.setDate(startDay.getDate() + i);
       if(day.getMonth() !== m){ html += '<div class="mini-day other-month">.</div>'; continue; }
-      const { classesForDay, deadlinesForDay } = getEventsForDate(day);
-      const hasEvent = classesForDay.length > 0 || deadlinesForDay.length > 0;
+      const { classesForDay, deadlinesForDay, activitiesForDay } = getEventsForDate(day);
+      const hasEvent = classesForDay.length > 0 || deadlinesForDay.length > 0 || activitiesForDay.length > 0;
       const isToday = sameDay(day, today);
       html += `<div class="mini-day ${hasEvent?'has-event':''} ${isToday?'today':''}" onclick="jumpToDate(${day.getFullYear()},${day.getMonth()},${day.getDate()},'day')">${day.getDate()}</div>`;
     }
@@ -2900,7 +3593,7 @@ async function githubPatchGist(token, gistId, content){
 // Gathers every synced section into one bundle for pushing to the cloud.
 function gatherState(){
   return {
-    links, schedule, classes, deadlines, coop, todos,
+    links, schedule, classes, deadlines, events, coop, todos,
     transactions, recurringBills, simBudget,
     grades, recurringIncome, incomeLog, countdown,
     habits, semester, focusSessions, gpaHistory,
@@ -2914,6 +3607,7 @@ function applyCloudState(bundle){
   if(bundle.schedule) schedule = bundle.schedule;
   if(bundle.classes) classes = bundle.classes;
   if(bundle.deadlines) deadlines = bundle.deadlines;
+  if(bundle.events) events = bundle.events;
   if(bundle.coop) coop = bundle.coop;
   if(bundle.todos) todos = bundle.todos;
   if(bundle.transactions) transactions = bundle.transactions;
@@ -2931,6 +3625,7 @@ function applyCloudState(bundle){
   localStorage.setItem('wit_schedule', JSON.stringify(schedule));
   localStorage.setItem('wit_classes', JSON.stringify(classes));
   localStorage.setItem('wit_deadlines', JSON.stringify(deadlines));
+  localStorage.setItem('wit_events', JSON.stringify(events));
   localStorage.setItem('wit_coop', JSON.stringify(coop));
   localStorage.setItem('wit_todos', JSON.stringify(todos));
   localStorage.setItem('wit_transactions', JSON.stringify(transactions));
@@ -2950,6 +3645,7 @@ function applyCloudState(bundle){
   }
   renderLinks(); renderClasses(); renderDeadlines(); renderCoop(); renderTodos(); renderBudget();
   renderGrades(); renderCountdown(); renderHabits(); renderSemesterBar(); renderInsights();
+  if(document.getElementById('scheduleOverlay').classList.contains('open')) renderScheduleView();
 }
 
 function setSyncStatusPill(text){
@@ -2967,7 +3663,9 @@ async function pushStateToCloud(){
     const bundle = gatherState();
     const encrypted = await encryptForSync(bundle, syncCryptoKey, syncSaltB64);
     await githubPatchGist(syncToken, syncGistId, JSON.stringify(encrypted));
-    setSyncStatusPill('🔒 Synced ✓');
+    const now = new Date();
+    localStorage.setItem('wit_last_synced', now.toISOString());
+    setSyncStatusPill('🔒 Synced ' + fmtClock(now));
   } catch(err){
     console.error(err);
     setSyncStatusPill('🔒 Sync failed — click to retry');
@@ -3080,7 +3778,9 @@ async function handleUnlockSubmit(){
 
     if(bundle) applyCloudState(bundle);
 
-    setSyncStatusPill('🔒 Synced ✓');
+    const unlockedAt = new Date();
+    localStorage.setItem('wit_last_synced', unlockedAt.toISOString());
+    setSyncStatusPill('🔒 Synced ' + fmtClock(unlockedAt));
     closeSyncOverlay();
   } catch(err){
     console.error(err);
@@ -3090,13 +3790,15 @@ async function handleUnlockSubmit(){
 
 function initSyncGate(){
   const enabledFlag = localStorage.getItem('wit_sync_enabled');
+  const lastSynced = localStorage.getItem('wit_last_synced');
+  const lastSyncedLabel = lastSynced ? ` (last synced ${fmtClock(new Date(lastSynced))})` : '';
   if(enabledFlag === '0'){
     // User explicitly chose offline-only on this device — don't nag every visit.
     setSyncStatusPill('🔓 Offline (this device only)');
     return;
   }
   if(enabledFlag === '1'){
-    setSyncStatusPill('🔒 Enter passphrase to sync');
+    setSyncStatusPill('🔒 Enter passphrase to sync' + lastSyncedLabel);
   } else {
     setSyncStatusPill('🔒 Set up sync');
   }
@@ -3135,7 +3837,7 @@ function exportBackup(){
   const backup = {
     exportedAt: new Date().toISOString(),
     name: localStorage.getItem('wit_name') || '',
-    links, schedule, classes, deadlines, coop, todos,
+    links, schedule, classes, deadlines, events, coop, todos,
     transactions, recurringBills, simBudget,
     grades, recurringIncome, incomeLog, countdown,
     habits, semester, focusSessions, gpaHistory
@@ -3208,7 +3910,7 @@ function renderGrades(){
   if(!el) return;
   el.innerHTML = grades.map((g,i)=>{
     const info = gradeInfoForPercent(g.percent);
-    return `<tr>
+    return `<tr data-idx="${i}">
       <td contenteditable="true" onblur="editCourse(${i},'name',this.textContent)">${esc(g.name)}</td>
       <td contenteditable="true" onblur="editCourse(${i},'credits',this.textContent)">${esc(String(g.credits))}</td>
       <td contenteditable="true" onblur="editCourse(${i},'percent',this.textContent)">${g.percent === '' || g.percent === null ? '' : esc(String(g.percent))}</td>
@@ -3379,7 +4081,7 @@ function renderHabits(){
       const done = !!h.log[key];
       return `<div class="habit-cell ${done?'done':''}" onclick="toggleHabitDay(${hi},'${key}')" title="${key}"></div>`;
     }).join('');
-    return `<div class="habit-row">
+    return `<div class="habit-row" data-idx="${hi}">
       <div class="habit-row-head">
         <span contenteditable="true" onblur="editHabitName(${hi},this.textContent)">${esc(h.name)}</span>
         <span class="habit-streak">🔥 ${streak}</span>
@@ -3520,6 +4222,12 @@ function closeInsightsModal(){
   document.getElementById('insightsOverlay').classList.remove('open');
 }
 
+function openShortcutsModal(){
+  document.getElementById('shortcutsOverlay').classList.add('open');
+}
+function closeShortcutsModal(){
+  document.getElementById('shortcutsOverlay').classList.remove('open');
+}
 function openHabitsModal(){
   document.getElementById('habitsOverlay').classList.add('open');
   renderHabits();
@@ -3529,12 +4237,68 @@ function closeHabitsModal(){
 }
 
 /* ============ Focus mode ============ */
+// Honest limits, spelled out: a web page cannot block navigation, disable
+// tabs, or stop you from typing a URL — no browser allows a site that much
+// control (for good reason). What's real here: a fullscreen takeover (hides
+// tabs/address bar — Esc always escapes it, that's the browser's rule, not
+// ours), a count of how many times you left while it was on, and a
+// press-and-hold requirement to turn it off on purpose rather than one
+// reflexive click. Friction, not a lock.
 let focusModeActive = false;
+let focusDistractionCount = 0;
+let focusAwayFromMode = false;
+function requestFocusFullscreen(){
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if(req) req.call(el).catch(()=>{});
+}
+function exitFullscreenIfActive(){
+  if(!(document.fullscreenElement || document.webkitFullscreenElement)) return;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+  if(exit) exit.call(document).catch(()=>{});
+}
+// Browser-forced fullscreen exits (Esc, F11, an OS gesture) happen whether
+// we like it or not and can't be intercepted — this just keeps our own
+// focus-mode state honest when that happens outside our own toggle.
+document.addEventListener('fullscreenchange', ()=>{
+  if(focusModeActive && !document.fullscreenElement && !document.webkitFullscreenElement){
+    setFocusMode(false);
+    closeTimerModal();
+  }
+});
+function handleFocusAwayCheck(isAway){
+  if(!focusModeActive) return;
+  if(isAway){
+    if(!focusAwayFromMode){
+      focusAwayFromMode = true;
+      focusDistractionCount++;
+      const btn = document.getElementById('focusModeBtn');
+      if(btn) btn.title = `Left focus ${focusDistractionCount} time${focusDistractionCount>1?'s':''} so far — hold to exit`;
+    }
+  } else {
+    focusAwayFromMode = false;
+  }
+}
+document.addEventListener('visibilitychange', ()=> handleFocusAwayCheck(document.hidden));
+window.addEventListener('blur', ()=> handleFocusAwayCheck(true));
+window.addEventListener('focus', ()=> handleFocusAwayCheck(false));
+
 function setFocusMode(on){
   focusModeActive = on;
   document.body.classList.toggle('focus-mode', on);
   const btn = document.getElementById('focusModeBtn');
-  if(btn) btn.textContent = on ? '🧘 Exit Focus' : '🧘 Focus Mode';
+  if(on){
+    focusDistractionCount = 0;
+    focusAwayFromMode = false;
+    if(btn){ btn.textContent = '🧘 Hold to Exit'; btn.title = 'Press and hold to exit (Esc also works)'; }
+    requestFocusFullscreen();
+  } else {
+    exitFullscreenIfActive();
+    if(btn){ btn.textContent = '🧘 Focus Mode'; btn.title = 'Shortcut: F'; }
+    if(focusDistractionCount > 0){
+      toast(`Focus session ended — you left the tab ${focusDistractionCount} time${focusDistractionCount>1?'s':''} while it was on.`);
+    }
+  }
 }
 function toggleFocusMode(){
   if(focusModeActive){
@@ -3545,10 +4309,39 @@ function toggleFocusMode(){
     openTimerModal();
   }
 }
+// Press-and-hold to exit: a plain click/tap on the button does nothing —
+// only holding it down for FOCUS_EXIT_HOLD_MS actually exits. Entering
+// focus mode (button not yet active) stays a single click, since the
+// friction is only meant to work against leaving impulsively.
+const FOCUS_EXIT_HOLD_MS = 1100;
+let focusHoldTimer = null;
+function focusBtnPointerDown(e){
+  if(!focusModeActive){ toggleFocusMode(); return; }
+  const btn = document.getElementById('focusModeBtn');
+  if(!btn || focusHoldTimer) return;
+  const start = Date.now();
+  btn.classList.add('holding');
+  btn.style.setProperty('--hold-pct', 0);
+  focusHoldTimer = setInterval(()=>{
+    const pct = Math.min(1, (Date.now() - start) / FOCUS_EXIT_HOLD_MS);
+    btn.style.setProperty('--hold-pct', pct);
+    if(pct >= 1){
+      clearInterval(focusHoldTimer); focusHoldTimer = null;
+      btn.classList.remove('holding');
+      toggleFocusMode();
+    }
+  }, 25);
+}
+function focusBtnPointerUp(){
+  const btn = document.getElementById('focusModeBtn');
+  if(focusHoldTimer){ clearInterval(focusHoldTimer); focusHoldTimer = null; }
+  if(btn){ btn.classList.remove('holding'); btn.style.setProperty('--hold-pct', 0); }
+}
 
 /* ============ Command palette ============ */
 const PALETTE_COMMANDS = [
   {label:'Open Schedule', action: openScheduleModal},
+  {label:'Add Calendar Event (one-time or recurring)', action: ()=>{ openScheduleModal(); toggleAddEventForm(); }},
   {label:'Open Budget', action: openBudgetModal},
   {label:'Open Grades', action: openGradesModal},
   {label:'Open Focus Timer', action: openTimerModal},
@@ -3563,6 +4356,7 @@ const PALETTE_COMMANDS = [
   {label:'Set Countdown', action: editCountdown},
   {label:'Set Semester Dates', action: editSemester},
   {label:'Set up Cloud Sync', action: openSyncOverlay},
+  {label:'Keyboard Shortcuts & Quick Capture Help', action: openShortcutsModal},
 ];
 let paletteFiltered = PALETTE_COMMANDS;
 let paletteActiveIdx = 0;
@@ -3619,32 +4413,53 @@ function parseLeadingTime(str){
   d.setHours(h, min, 0, 0);
   return d;
 }
-let notifiedToday = load('wit_notified_today', { date: todayISO(), deadlines: [], classes: [] });
+let notifiedToday = load('wit_notified_today', { date: todayISO(), deadlines: [], classes: [], events: [], bills: [] });
 function resetNotifiedIfNewDay(){
   if(notifiedToday.date !== todayISO()){
-    notifiedToday = { date: todayISO(), deadlines: [], classes: [] };
+    notifiedToday = { date: todayISO(), deadlines: [], classes: [], events: [], bills: [] };
     localStorage.setItem('wit_notified_today', JSON.stringify(notifiedToday));
   }
+  // Older saved state may predate these fields — patch them in rather than
+  // wiping the deadlines/classes history that's already recorded for today.
+  if(!notifiedToday.events) notifiedToday.events = [];
+  if(!notifiedToday.bills) notifiedToday.bills = [];
 }
 function sendNotification(title, body){
   if(!('Notification' in window) || Notification.permission !== 'granted') return;
   try{ new Notification(title, { body }); } catch(e){}
 }
+// True while "now" falls inside one of today's class time blocks, so
+// deadline pings can stay quiet mid-lecture instead of buzzing your phone.
+// Fails safe: any class whose time string can't be parsed is just skipped
+// rather than blocking notifications entirely.
+function isInClassRightNow(){
+  const now = new Date();
+  return classes.some(c=>{
+    const parts = (c.time || '').split(/[–-]/).map(s=>s.trim());
+    if(parts.length < 2) return false;
+    const start = parseLeadingTime(parts[0]);
+    const end = parseLeadingTime(parts[1]);
+    if(!start || !end) return false;
+    return now >= start && now <= end;
+  });
+}
 function checkNotifications(){
   if(!('Notification' in window) || Notification.permission !== 'granted') return;
   resetNotifiedIfNewDay();
   const now = new Date();
-  deadlines.forEach(d=>{
-    if(!d.date) return;
-    const due = new Date(d.date+'T23:59:59');
-    const hoursUntil = (due - now) / 3600000;
-    const key = d.title + '|' + d.date;
-    if(hoursUntil >= 0 && hoursUntil <= 48 && !notifiedToday.deadlines.includes(key)){
-      sendNotification('Deadline due soon', `${d.title} is due ${fmtDeadlineDate(d.date)}`);
-      notifiedToday.deadlines.push(key);
-      localStorage.setItem('wit_notified_today', JSON.stringify(notifiedToday));
-    }
-  });
+  if(!isInClassRightNow()){
+    deadlines.forEach(d=>{
+      if(!d.date) return;
+      const due = new Date(d.date+'T23:59:59');
+      const hoursUntil = (due - now) / 3600000;
+      const key = d.title + '|' + d.date;
+      if(hoursUntil >= 0 && hoursUntil <= dueSoonWindowHours(d.priority || 'Medium') && !notifiedToday.deadlines.includes(key)){
+        sendNotification('Deadline due soon', `${d.title} is due ${fmtDeadlineDate(d.date)}`);
+        notifiedToday.deadlines.push(key);
+        localStorage.setItem('wit_notified_today', JSON.stringify(notifiedToday));
+      }
+    });
+  }
   classes.forEach(c=>{
     const start = parseLeadingTime(c.time);
     if(!start) return;
@@ -3656,6 +4471,33 @@ function checkNotifications(){
       localStorage.setItem('wit_notified_today', JSON.stringify(notifiedToday));
     }
   });
+  events.forEach(ev=>{
+    if(!ev.time || !eventOccursOnDate(ev, now)) return;
+    const start = parseLeadingTime(ev.time);
+    if(!start) return;
+    const minsUntil = (start - now) / 60000;
+    const key = ev.id + '|' + todayISO();
+    if(minsUntil >= 0 && minsUntil <= 10 && !notifiedToday.events.includes(key)){
+      sendNotification('Event starting soon', `${ev.title} starts at ${ev.time}${ev.endTime ? ' – ' + ev.endTime : ''}`);
+      notifiedToday.events.push(key);
+      localStorage.setItem('wit_notified_today', JSON.stringify(notifiedToday));
+    }
+  });
+  if(!isInClassRightNow()){
+    recurringBills.forEach((b,i)=>{
+      const day = parseInt(b.day, 10);
+      if(!day) return;
+      let due = new Date(now.getFullYear(), now.getMonth(), day, 23, 59, 59);
+      if(due < now) due = new Date(now.getFullYear(), now.getMonth()+1, day, 23, 59, 59);
+      const hoursUntil = (due - now) / 3600000;
+      const key = i + '|' + b.name + '|' + localISO(due);
+      if(hoursUntil >= 0 && hoursUntil <= dueSoonWindowHours('Medium') && !notifiedToday.bills.includes(key)){
+        sendNotification('Bill due soon', `${b.name} ($${Number(b.amount).toFixed(2)}) is due ${fmtDeadlineDate(localISO(due))}`);
+        notifiedToday.bills.push(key);
+        localStorage.setItem('wit_notified_today', JSON.stringify(notifiedToday));
+      }
+    });
+  }
 }
 function requestNotificationPermission(){
   if(!('Notification' in window)){ toast('Notifications are not supported in this browser.', true); return; }
