@@ -1099,6 +1099,7 @@
     <div class="editor-note" style="margin-top:14px;">Dates understand ISO (2026-09-10), M/D, "next &lt;day&gt;", "in N days/weeks", month names, "today/tomorrow/yesterday", and "eod". A date with no clock time becomes a deadline; a clock time (with or without a date) becomes a timed calendar event — both show up on the Schedule calendar. Add <span class="mono">!high</span>, <span class="mono">!medium</span>, or <span class="mono">!low</span> anywhere to set a deadline's priority.</div>
     <div class="editor-note" style="margin-top:6px;">Need something that repeats — a weekly meeting, a monthly bill reminder? Open Schedule and use <b>+ Add Event</b> for full control over recurrence, specific weekdays, and an end date/count.</div>
     <div class="editor-note" style="margin-top:6px;"><b>Classes</b> vs <b>Events</b> vs <b>Deadlines</b>, in one line: Classes are your fixed weekly course schedule (set once, edited from the Classes list); Events are anything else with a time or a repeat pattern — meetings, appointments, recurring bills, workouts — added from Schedule → <b>+ Add Event</b>; Deadlines are things due by a date with no time slot, like assignments — add those from Quick Capture or the Deadlines list. When in doubt: has a specific time or repeats on a schedule → Event. Just due by a date → Deadline.</div>
+    <div style="margin-top:16px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">WIT Dashboard v<span id="dashboardVersion"></span></div>
    </div>
   </div>
 
@@ -1222,6 +1223,8 @@
   <div id="toastStack"></div>
 
 <script>
+const DASHBOARD_VERSION = '1.1.0';
+const DASHBOARD_UPDATED = 'Sep 2026 — added Daily Planner';
 /* ============ live clock ============ */
 function updateClock(){
   const now = new Date();
@@ -3736,7 +3739,10 @@ async function pushStateToCloud(){
     setSyncStatusPill('🔒 Synced ' + fmtClock(now));
   } catch(err){
     console.error(err);
+    const pill = document.getElementById('syncStatusPill');
+    if(pill) pill.title = err.message || String(err);
     setSyncStatusPill('🔒 Sync failed — click to retry');
+    toast('Sync failed: ' + (err.message || err) + (/404/.test(err.message||'') ? ' — if your GitHub token is a "fine-grained" token, switch to a classic token with the "gist" scope; fine-grained tokens can\'t access the Gists API.' : ''), true);
   }
 }
 
@@ -3852,7 +3858,8 @@ async function handleUnlockSubmit(){
     closeSyncOverlay();
   } catch(err){
     console.error(err);
-    statusEl.textContent = 'Connection error: ' + err.message;
+    const hint = /404/.test(err.message||'') ? ' If your GitHub token is a "fine-grained" token, GitHub does not let those access the Gists API yet — create a classic token instead, scoped only to "gist".' : '';
+    statusEl.textContent = 'Connection error: ' + err.message + hint;
   }
 }
 
@@ -4291,6 +4298,8 @@ function closeInsightsModal(){
 }
 
 function openShortcutsModal(){
+  const vEl = document.getElementById('dashboardVersion');
+  if(vEl){ vEl.textContent = DASHBOARD_VERSION; vEl.title = DASHBOARD_UPDATED; }
   document.getElementById('shortcutsOverlay').classList.add('open');
 }
 function closeShortcutsModal(){
