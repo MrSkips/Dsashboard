@@ -440,6 +440,18 @@
     letter-spacing:.4px;flex-shrink:0;
   }
 
+  /* Daily Planner */
+  #dailyPlannerList{flex:1;min-height:0;overflow-y:auto;}
+  .planner-row{display:flex;gap:12px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .planner-row:last-child{border-bottom:none;}
+  .planner-time{color:var(--wit-gold);font-size:11px;font-weight:700;min-width:78px;font-family:'IBM Plex Mono',monospace;flex-shrink:0;}
+  .planner-info{flex:1;}
+  .planner-sub{color:var(--muted);font-size:12px;}
+  .planner-due .planner-time{color:var(--wit-red);}
+  .planner-task{align-items:center;}
+  .planner-task input[type=checkbox]{accent-color:var(--wit-teal);width:15px;height:15px;flex-shrink:0;}
+  .planner-subhead{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:10px 0 4px;}
+
   footer{margin-top:8px;text-align:center;color:var(--muted);font-size:11px;flex-shrink:0;}
   .footer-actions{display:flex;justify-content:center;gap:10px;}
   .footer-actions button{
@@ -826,7 +838,12 @@
 
     <!-- Column 3 -->
     <div class="col-span-1" style="display:flex;flex-direction:column;min-height:0;">
-      <div class="card stagger-item" data-card-id="coop" style="animation-delay:240ms;">
+      <div class="card stagger-item" data-card-id="dailyplanner" style="animation-delay:240ms;">
+        <div class="card-head" style="justify-content:flex-start;"><span class="drag-handle" title="Drag to reorder">⋮⋮</span><h2>Daily Planner</h2></div>
+        <div id="dailyPlannerList"></div>
+      </div>
+
+      <div class="card stagger-item" data-card-id="coop" style="animation-delay:300ms;">
         <div class="card-head">
           <div style="display:flex;align-items:center;"><span class="drag-handle" title="Drag to reorder">⋮⋮</span><h2>Co-op Application Tracker</h2></div>
           <button class="icon-btn" onclick="toggleForm('coopForm')">+</button>
@@ -1710,6 +1727,7 @@ function renderClasses(){
     el.appendChild(div);
   });
   staggerIn(el, '.class-card');
+  renderDailyPlanner();
 }
 function addClass(){
   const time = document.getElementById('classTime').value.trim();
@@ -2140,6 +2158,7 @@ function renderDeadlines(){
     el.appendChild(row);
   });
   staggerIn(el, '.deadline');
+  renderDailyPlanner();
 }
 function cyclePriority(i){
   const order = ['Low','Medium','High'];
@@ -2308,6 +2327,7 @@ function renderTodos(){
     todoListEl.appendChild(row);
   });
   staggerIn(todoListEl, '.todo-item');
+  renderDailyPlanner();
 }
 function setTodoFilter(cat){
   todoFilter = cat;
@@ -2334,6 +2354,54 @@ newTodoEl.addEventListener('keydown', e=>{
 });
 renderTodos();
 updateTabIndicator(document.getElementById('todoFilterTabs'));
+
+/* ============ Daily Planner ============ */
+// Combines today's classes/events (timed, sorted chronologically), any
+// deadlines due today, and open to-dos into one agenda view. Guards on
+// classes/deadlines/todos existing yet, since renderClasses() runs once
+// before deadlines/todos are declared during initial page load.
+function renderDailyPlanner(){
+  if(typeof classes === 'undefined' || typeof deadlines === 'undefined' || typeof todos === 'undefined') return;
+  const el = document.getElementById('dailyPlannerList');
+  if(!el) return;
+  const today = todayISO();
+
+  const timed = [];
+  classes.forEach(c=>{
+    const t = parseLeadingTime(c.time);
+    timed.push({ sortKey: t ? t.getHours()*60+t.getMinutes() : 9999, label: c.time || '', title: c.name, sub: c.room, cls:'' });
+  });
+  if(typeof events !== 'undefined'){
+    events.forEach(ev=>{
+      if(eventOccursOnDate(ev, new Date())){
+        const t = ev.time ? parseLeadingTime(ev.time) : null;
+        timed.push({ sortKey: t ? t.getHours()*60+t.getMinutes() : 9998, label: ev.time || 'All day', title: ev.title, sub: '', cls:'' });
+      }
+    });
+  }
+  timed.sort((a,b)=> a.sortKey - b.sortKey);
+
+  const dueToday = deadlines.filter(d=> d.date === today);
+  const openTodos = todos.filter(t=> !t.done);
+
+  let html = '';
+  timed.forEach(item=>{
+    html += `<div class="planner-row"><div class="planner-time">${esc(item.label)}</div><div class="planner-info"><b>${esc(item.title)}</b>${item.sub ? ` <span class="planner-sub">${esc(item.sub)}</span>` : ''}</div></div>`;
+  });
+  dueToday.forEach(d=>{
+    const priority = d.priority || 'Medium';
+    html += `<div class="planner-row planner-due"><div class="planner-time">Due</div><div class="planner-info"><b>${esc(d.title)}</b> <span class="priority-tag priority-${priority}">${priority}</span></div></div>`;
+  });
+  if(openTodos.length){
+    html += '<div class="planner-subhead">Open tasks</div>';
+    openTodos.forEach(t=>{
+      const realIdx = todos.indexOf(t);
+      html += `<div class="planner-row planner-task"><input type="checkbox" onchange="toggleTodo(${realIdx})"><div class="planner-info">${esc(t.text)}</div></div>`;
+    });
+  }
+  el.innerHTML = html || '<div class="empty-note">Nothing on the books for today. 🎉</div>';
+}
+renderDailyPlanner();
 
 /* ============ Budget ============ */
 const budgetSeedDate = new Date().toISOString().slice(0,10);
