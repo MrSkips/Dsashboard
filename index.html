@@ -1224,6 +1224,7 @@
 
 <script>
 const DASHBOARD_VERSION = '1.1.0';
+let __dailyPlannerReady = false; // flips true once classes/deadlines/events/todos have all been declared
 const DASHBOARD_UPDATED = 'Sep 2026 — added Daily Planner';
 /* ============ live clock ============ */
 function updateClock(){
@@ -2364,7 +2365,7 @@ updateTabIndicator(document.getElementById('todoFilterTabs'));
 // classes/deadlines/todos existing yet, since renderClasses() runs once
 // before deadlines/todos are declared during initial page load.
 function renderDailyPlanner(){
-  if(typeof classes === 'undefined' || typeof deadlines === 'undefined' || typeof todos === 'undefined') return;
+  if(!__dailyPlannerReady) return;
   const el = document.getElementById('dailyPlannerList');
   if(!el) return;
   const today = todayISO();
@@ -2374,7 +2375,7 @@ function renderDailyPlanner(){
     const t = parseLeadingTime(c.time);
     timed.push({ sortKey: t ? t.getHours()*60+t.getMinutes() : 9999, label: c.time || '', title: c.name, sub: c.room, cls:'' });
   });
-  if(typeof events !== 'undefined'){
+  if(__dailyPlannerReady){
     events.forEach(ev=>{
       if(eventOccursOnDate(ev, new Date())){
         const t = ev.time ? parseLeadingTime(ev.time) : null;
@@ -2404,6 +2405,7 @@ function renderDailyPlanner(){
   }
   el.innerHTML = html || '<div class="empty-note">Nothing on the books for today. 🎉</div>';
 }
+__dailyPlannerReady = true;
 renderDailyPlanner();
 
 /* ============ Budget ============ */
@@ -3858,8 +3860,11 @@ async function handleUnlockSubmit(){
     closeSyncOverlay();
   } catch(err){
     console.error(err);
-    const hint = /404/.test(err.message||'') ? ' If your GitHub token is a "fine-grained" token, GitHub does not let those access the Gists API yet — create a classic token instead, scoped only to "gist".' : '';
-    statusEl.textContent = 'Connection error: ' + err.message + hint;
+    const msg = err.message || '';
+    let hintText = '';
+    if(/404/.test(msg)) hintText = ' If your GitHub token is a "fine-grained" token, GitHub does not let those access the Gists API yet — create a classic token instead, scoped only to "gist".';
+    else if(/401/.test(msg)) hintText = ' Your saved token was rejected (expired, revoked, or never valid). Click "Use a different token" below and paste a fresh classic token scoped to "gist".';
+    statusEl.textContent = 'Connection error: ' + err.message + hintText;
   }
 }
 
