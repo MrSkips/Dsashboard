@@ -55,7 +55,7 @@
   ::selection{background:rgba(44,175,197,.35); color:#fff;}
 
   /* focus rings: soft teal glow instead of hard outline */
-  input:focus, select:focus, textarea:focus, [contenteditable="true"]:focus, button:focus-visible{
+  input:focus, select:focus, textarea:focus, button:focus-visible{
     outline:none;
     box-shadow:0 0 0 3px rgba(44,175,197,.15);
     border-color:var(--wit-teal) !important;
@@ -242,11 +242,6 @@
     transition:color .2s var(--ease);
   }
   .del-btn:hover{color:var(--wit-red);}
-  [contenteditable="true"]{outline:none;transition:background .2s var(--ease);}
-  [contenteditable="true"]:hover, [contenteditable="true"]:focus{
-    background:var(--panel);border-radius:4px;
-  }
-
   /* Quick links */
   .quicklinks{display:flex;gap:18px;flex-wrap:wrap;flex:1;min-height:0;overflow-y:auto;align-content:flex-start;}
   .qlink{display:flex;flex-direction:column;align-items:center;gap:8px;width:66px;position:relative;}
@@ -405,8 +400,8 @@
   #todoList{flex:1;min-height:0;overflow-y:auto;}
   .todo-item{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;}
   .todo-item input[type=checkbox]{accent-color:var(--wit-teal);width:16px;height:16px;}
-  .todo-item.done label{text-decoration:line-through;color:var(--muted);}
-  .todo-item label{flex:1;}
+  .todo-item.done .editable-text{text-decoration:line-through;color:var(--muted);}
+  .todo-item .editable-text{flex:1;}
   #newTodo{
     background:var(--panel);border:1px solid var(--border);
     border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;
@@ -715,7 +710,7 @@ body{max-width:1800px;margin:auto;line-height:1.5;}
 .class-card{padding:12px;}
 .class-card .name{color:#aaa6ff;}
 #deadlineList,#todoList,#dailyPlannerList{max-height:460px;overflow:auto;}
-.deadline .info,.planner-info,.todo-item label,.txn-row>span:first-child{min-width:0;overflow-wrap:anywhere;}
+.deadline .info,.planner-info,.todo-item .editable-text,.txn-row>span:first-child{min-width:0;overflow-wrap:anywhere;}
 .deadline{gap:10px;padding:12px 0;}
 .deadline .info b{font-size:13px;}
 .deadline .date{font-size:11px;min-width:42px;}
@@ -740,7 +735,7 @@ select,input,textarea{font:inherit;}
 select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:6px;max-width:100%;}
 .icon-btn,.del-btn,.close-modal{min-width:30px;min-height:30px;flex-shrink:0;}
 button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--wit-teal);outline-offset:3px;box-shadow:none;}
-input:focus-visible,select:focus-visible,textarea:focus-visible,[contenteditable]:focus-visible{outline:2px solid var(--wit-teal);outline-offset:2px;}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--wit-teal);outline-offset:2px;}
 .view-tab.active{background:var(--wit-indigo);color:#fff;}
 .view-tabs{border-radius:6px;overflow:auto;}
 .view-tab{white-space:nowrap;}
@@ -785,7 +780,7 @@ body.focus-mode #focusModeBtn{display:flex!important;}
   .habit-cell{min-height:20px;padding:0;}
   .nav-controls{flex-wrap:wrap;}
   .quick-capture-wrap input{font-size:16px;}
-  .icon-btn,.del-btn{min-height:36px;min-width:32px;}
+  .icon-btn,.del-btn,.close-modal{min-height:42px;min-width:42px;}
   .footer-actions{gap:6px;}
 }
 
@@ -814,3 +809,136 @@ body.focus-mode #focusModeBtn{display:flex;}
 }
 
 body.focus-mode #enterFocusMode{display:none;}
+
+/* Consolidated navigation and explicit editors. */
+.editable-heading{
+  appearance:none;background:none;border:0;border-bottom:1px dashed var(--muted);
+  color:var(--text);font:inherit;padding:0 0 2px;text-align:left;border-radius:2px;
+}
+.editable-heading:hover{color:var(--wit-teal);border-color:var(--wit-teal);}
+.semester-bar{
+  position:relative;display:block;width:100%;padding:0;background:var(--panel-2);
+  color:var(--text);border:1px solid var(--border);overflow:hidden;text-align:center;
+}
+.meta-row{position:relative;align-items:center;}
+.primary-actions,.status-cluster{display:flex;align-items:center;gap:8px;min-width:0;}
+.status-cluster{margin-left:auto;}
+.command-button{margin-left:0;}
+.tools-menu{position:relative;z-index:60;}
+.tools-menu summary{list-style:none;display:flex;align-items:center;gap:7px;user-select:none;}
+.tools-menu summary::-webkit-details-marker{display:none;}
+.tools-menu[open] summary{border-color:var(--wit-teal);color:var(--wit-teal);}
+.tools-menu-panel{
+  position:absolute;top:calc(100% + 8px);left:0;width:210px;padding:6px;
+  background:var(--panel-2);border:1px solid var(--border);border-radius:8px;
+  box-shadow:0 14px 34px rgba(0,0,0,.42);
+}
+.tools-menu-panel button{
+  width:100%;min-height:42px;padding:9px 10px;display:flex;align-items:center;
+  justify-content:space-between;gap:12px;background:none;border:0;border-radius:5px;
+  color:var(--text);font-size:13px;text-align:left;
+}
+.tools-menu-panel button:hover,.tools-menu-panel button:focus-visible{background:var(--panel);color:var(--wit-teal);}
+kbd{font:600 10px 'IBM Plex Mono',monospace;color:var(--muted);}
+#weatherPill{position:relative;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.edit-dialog{max-width:480px;align-self:center;}
+.edit-dialog h2{margin:0;font-size:16px;}
+.dialog-description{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.5;}
+.dialog-description:empty{display:none;}
+.edit-dialog-fields{display:grid;gap:13px;}
+.edit-field{display:grid;gap:5px;}
+.edit-field label{color:var(--muted);font-size:11px;font-weight:600;}
+.edit-field input,.edit-field select,.edit-field textarea{width:100%;min-height:44px;padding:9px 10px;}
+.edit-field textarea{min-height:92px;resize:vertical;}
+.edit-dialog-actions{justify-content:flex-end;margin-top:18px;}
+.edit-dialog-actions button{min-height:42px;min-width:92px;}
+.editable-text{
+  appearance:none;background:none;border:0;color:inherit;font:inherit;padding:2px 3px;
+  margin:-2px -3px;border-radius:4px;text-align:left;min-width:0;max-width:100%;
+}
+.editable-text:hover,.editable-text:focus-visible{background:rgba(44,175,197,.1);color:var(--wit-teal);}
+.editable-text::after{content:'  edit';font-size:9px;color:var(--muted);opacity:0;}
+.editable-text:hover::after,.editable-text:focus-visible::after{opacity:1;}
+.item-edit{font-size:11px;color:var(--muted);background:none;border:0;min-height:32px;padding:4px 6px;}
+.item-edit:hover{color:var(--wit-teal);}
+
+@media(max-width:900px){
+  .meta-row{align-items:flex-start;}
+  .primary-actions{flex:1;flex-wrap:wrap;}
+  .status-cluster{width:100%;order:3;margin-left:0;justify-content:space-between;border-top:1px solid var(--border);padding-top:7px;}
+}
+@media(max-width:700px){
+  body{padding:12px 10px calc(18px + env(safe-area-inset-bottom));}
+  .site-header{margin-bottom:12px;}
+  .header-inner{display:grid;grid-template-columns:1fr;}
+  .search-wrap{grid-row:2;min-height:46px;padding:9px 12px;}
+  .semester-bar{min-height:30px;margin-top:10px;}
+  .meta-row{gap:7px;margin-bottom:12px;}
+  .primary-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));width:100%;gap:5px;}
+  .primary-actions>.pill,.tools-menu,.tools-menu summary{width:100%;min-width:0;justify-content:center;}
+  .primary-actions>.pill,.tools-menu summary{padding:8px 5px;font-size:11px;min-height:42px;}
+  .tools-menu-panel{position:fixed;left:10px;right:10px;top:auto;width:auto;margin-top:6px;}
+  .command-button{width:100%;order:2;justify-content:center;min-height:42px;}
+  .status-cluster{font-size:10px;gap:4px;}
+  #dateTimePill{width:auto;white-space:nowrap;}
+  #weatherPill{min-width:0;max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .quick-capture-wrap{position:sticky;top:6px;z-index:40;margin-bottom:14px;box-shadow:0 8px 22px rgba(0,0,0,.3);}
+  .quick-capture-wrap>span{display:none;}
+  .quick-add-button{min-height:40px;min-width:58px;}
+  .card{padding:13px 12px;}
+  .card-head{align-items:center;}
+  .card-head>div:last-child{width:auto;}
+  .drag-handle{display:none;}
+  .quicklinks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 6px;}
+  .qlink,.qlink-add{width:100%;min-width:0;}
+  .qlink .label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .classes{grid-template-columns:1fr;}
+  .deadline{align-items:center;}
+  .deadline .info{display:flex;flex-wrap:wrap;align-items:center;gap:5px;}
+  .deadline .info .editable-text{flex-basis:100%;}
+  .todo-item{min-height:48px;}
+  .todo-item input[type=checkbox],.planner-task input[type=checkbox]{width:22px;height:22px;}
+  .todo-item .editable-text{flex:1;overflow-wrap:anywhere;}
+  .kanban-scroll{grid-template-columns:1fr;}
+  .budget-snapshot-actions{width:100%;justify-content:space-between;}
+  .budget-view-toggle{flex:1;}
+  .budget-view-toggle .view-tab{flex:1;min-height:36px;}
+  .budget-snapshot-metrics{grid-template-columns:1fr;}
+  .budget-snapshot-metrics b{font-size:15px;}
+  .recurring-row,.txn-row{align-items:flex-start;flex-wrap:wrap;padding:10px 0;}
+  .recurring-row>span:last-child,.txn-row>span:last-child{margin-left:auto;}
+  .modal-overlay{align-items:flex-end;padding:0;}
+  .modal{max-height:92dvh;border-radius:12px 12px 0 0;padding:14px 12px calc(16px + env(safe-area-inset-bottom));}
+  .modal-header{top:-14px;padding:12px 0 10px;}
+  .edit-dialog{max-width:none;}
+  .edit-dialog-actions{position:sticky;bottom:0;background:var(--panel-2);padding-top:10px;}
+  .footer-actions{display:grid;grid-template-columns:1fr 1fr;}
+  .footer-actions button{min-height:42px;}
+  .week-grid{min-width:0;grid-template-columns:1fr;gap:7px;}
+  .week-day{min-height:0;padding:10px;}
+  .month-day{min-height:54px;padding:4px 3px;overflow:hidden;}
+  .month-day .badge{display:none;}
+  .month-day:has(.badge)::after{content:'';display:block;width:6px;height:6px;margin:4px auto 0;border-radius:50%;background:var(--wit-indigo-light);}
+  .period-label{min-width:0;flex:1;text-align:left;}
+  .nav-controls{width:100%;}
+  #scheduleOverlay .view-tabs{width:100%;display:flex;}
+  #scheduleOverlay .view-tab{flex:1;padding-inline:6px;}
+  #gradesOverlay table{min-width:520px;}
+  .habit-row{overflow-x:auto;padding-bottom:5px;}
+  .habit-grid{grid-template-columns:repeat(14,36px);width:max-content;min-width:100%;padding-bottom:4px;}
+  .habit-cell{min-height:36px;}
+}
+@media(max-width:390px){
+  .eyebrow{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .primary-actions>.pill,.tools-menu summary{font-size:10px;padding-inline:3px;}
+  .quicklinks{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .budget-snapshot-actions{align-items:stretch;}
+}
+
+/* System fonts keep the installed app fully offline and avoid layout shifts. */
+body,input,select,textarea,button,label,nav,h1,h2,h3,.card h2,.sub-head,th{
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+.mono,#dateStr,#timeStr,.sim-row .sim-computed,.lock-status,.eyebrow,.week-day-num,.month-day-num,kbd{
+  font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+}

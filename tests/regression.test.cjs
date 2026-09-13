@@ -34,18 +34,28 @@ test('only http(s) URLs can be followed from editable data',()=>{
   assert.equal(c.safeUrl('example.com'),'https://example.com/');
   assert.equal(c.esc(42),'42');assert.equal(c.esc('<img>'),'&lt;img&gt;');
 });
+test('Wentworth grade weights match the published undergraduate scale',()=>{
+  const c=context(['gradeInfoForPercent'],{GPA_SCALE:[
+    {min:93,letter:'A',points:4},{min:90,letter:'A-',points:3.67},{min:87,letter:'B+',points:3.33},
+    {min:83,letter:'B',points:3},{min:80,letter:'B-',points:2.67},{min:77,letter:'C+',points:2.33},
+    {min:73,letter:'C',points:2},{min:70,letter:'C-',points:1.67},{min:67,letter:'D+',points:1.33},
+    {min:60,letter:'D',points:1},{min:-Infinity,letter:'F',points:0}
+  ]});
+  assert.equal(c.gradeInfoForPercent(90).points,3.67);assert.equal(c.gradeInfoForPercent(90).letter,'A-');
+  assert.equal(c.gradeInfoForPercent(62).points,1);assert.equal(c.gradeInfoForPercent(62).letter,'D');
+});
 test('weekly pay is recorded once per actual payday, including old ledger migration',()=>{
   const c=context(['localISODate','refreshWeeklyIncome'],{Date:clock('2026-09-14T12:00:00'),recurringIncome:[{name:'Pay',amount:100,weekday:5}],incomeLog:{'Pay|5':'2026-W37'},transactions:[{date:'2026-09-11',description:'Pay',amount:100,type:'income'}],save:()=>{}});
   c.refreshWeeklyIncome();assert.equal(c.transactions.length,1);assert.equal(c.incomeLog['Pay|5'],'2026-09-11');
   c.Date=clock('2026-09-18T12:00:00');c.refreshWeeklyIncome();c.refreshWeeklyIncome();assert.equal(c.transactions.length,2);assert.equal(c.transactions[1].date,'2026-09-18');
 });
 test('timer catches up after background throttling',()=>{
-  const c=context(['tickTimer'],{Date:clock('2026-09-10T12:10:00Z'),timerState:{running:true,mode:'focus',remaining:1500,endsAt:new Date('2026-09-10T12:25:00Z').getTime()},timerSettings:{focusMin:25,breakMin:5},renderTimer:()=>{},logFocusSession:()=>{},toast:()=>{}});
+  const c=context(['tickTimer'],{Date:clock('2026-09-10T12:10:00Z'),timerState:{running:true,mode:'focus',remaining:1500,endsAt:new Date('2026-09-10T12:25:00Z').getTime()},timerSettings:{focusMin:25,breakMin:5},renderTimer:()=>{},logFocusSession:()=>{},persistTimerState:()=>{},toast:()=>{}});
   c.tickTimer();assert.equal(c.timerState.remaining,900);
 });
 test('completed timer logs once and starts the next mode from current time',()=>{
   let logged=0;
-  const c=context(['tickTimer'],{Date:clock('2026-09-10T13:00:00Z'),timerState:{running:true,mode:'focus',remaining:1,endsAt:1},timerSettings:{focusMin:25,breakMin:5},renderTimer:()=>{},logFocusSession:()=>logged++,toast:()=>{}});
+  const c=context(['tickTimer'],{Date:clock('2026-09-10T13:00:00Z'),timerState:{running:true,mode:'focus',remaining:1,endsAt:1},timerSettings:{focusMin:25,breakMin:5},renderTimer:()=>{},logFocusSession:()=>logged++,persistTimerState:()=>{},toast:()=>{}});
   c.tickTimer();c.tickTimer();assert.equal(logged,1);assert.equal(c.timerState.mode,'break');assert.equal(c.timerState.remaining,300);
 });
 test('month navigation from January 31 does not skip February',()=>{
@@ -77,13 +87,20 @@ test('service worker ignores authenticated and external requests and unrelated c
   const c=vm.createContext({URL,Response,Set,Promise,self:{registration:{scope:'https://example.com/Dsashboard/'},addEventListener:(name,fn)=>handlers[name]=fn,skipWaiting:()=>{},clients:{claim:async()=>{}}},caches:{keys:async()=>['other-app','wit-dashboard-v1','wit-dashboard-v2'],delete:async key=>deleted.push(key)}});
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../sw.js'),'utf8'),c);
   for(const request of [{url:'https://api.github.com/gists/1',method:'GET',headers:new Headers()},{url:'https://example.com/Dsashboard/app.js',method:'GET',headers:new Headers({Authorization:'token test'})}])handlers.fetch({request,respondWith:()=>assert.fail('must not intercept')});
-  let done;handlers.activate({waitUntil:p=>done=p});await done;assert.deepEqual(deleted,['wit-dashboard-v1']);
+  let done;handlers.activate({waitUntil:p=>done=p});await done;assert.deepEqual(deleted,['wit-dashboard-v1','wit-dashboard-v2']);
 });
 test('entrypoint assets exist and all JavaScript parses',()=>{
   const path=require('node:path'),root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'index.html'),'utf8');
-  for(const file of ['app.js','styles.css','sw.js','manifest.json','icon.svg'])assert.ok(fs.existsSync(path.join(root,file)),file);
-  new vm.Script(source);new vm.Script(fs.readFileSync(path.join(root,'sw.js'),'utf8'));
+  for(const file of ['dashboard-ui.js','app.js','styles.css','sw.js','manifest.json','icon.svg','icon-192.png','icon-512.png'])assert.ok(fs.existsSync(path.join(root,file)),file);
+  new vm.Script(fs.readFileSync(path.join(root,'dashboard-ui.js'),'utf8'));new vm.Script(source);new vm.Script(fs.readFileSync(path.join(root,'sw.js'),'utf8'));
   for(const match of html.matchAll(/\son(?:click|change|keydown|input|blur|focus|pointerdown|pointerup|pointerleave|pointercancel)="([^"]*)"/g))new Function('event',match[1]);
   JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
   assert.ok(html.includes('<main '));assert.ok(html.includes('</main>'));
+});
+test('phone styles use one-column content and touch-sized controls',()=>{
+  const css=fs.readFileSync(require('node:path').join(__dirname,'../styles.css'),'utf8');
+  assert.match(css,/@media\(max-width:700px\)/);
+  assert.match(css,/\.grid\{grid-template-columns:minmax\(0,1fr\);\}/);
+  assert.match(css,/\.icon-btn,\.del-btn,\.close-modal\{min-height:42px;min-width:42px;\}/);
+  assert.match(css,/\.week-grid\{min-width:0;grid-template-columns:1fr;/);
 });

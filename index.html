@@ -6,15 +6,12 @@
 <meta name="description" content="Your daily workspace for classes, assignments, tasks, co-op applications, and personal planning.">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#151b22">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -25,7 +22,7 @@
         <div class="logo-mark">W</div>
         <div>
           <div class="eyebrow">Wentworth Institute of Technology</div>
-          <h1><span id="welcomeName" contenteditable="true" aria-label="Dashboard name">My dashboard</span></h1>
+          <h1><button id="welcomeName" class="editable-heading" type="button" onclick="editDashboardName()" aria-label="Edit dashboard name">My dashboard</button></h1>
         </div>
       </div>
       <div class="search-wrap">
@@ -39,37 +36,46 @@
       </div>
     </div>
     <div class="header-underline"></div>
-    <div class="semester-bar" id="semesterBar" onclick="editSemester()" title="Click to set semester dates">
+    <button class="semester-bar" id="semesterBar" type="button" onclick="editSemester()" title="Set semester dates">
       <div class="semester-bar-fill" id="semesterBarFill"></div>
       <span class="semester-bar-label" id="semesterBarLabel"></span>
-    </div>
+    </button>
   </header>
 
-  <div class="meta-row">
-    <button class="pill schedule-btn" onclick="openScheduleModal()" title="Shortcut: S">Schedule</button>
-    <button class="pill schedule-btn" onclick="openBudgetModal()" title="Shortcut: B">Budget</button>
-    <button class="pill schedule-btn" onclick="openGradesModal()" title="Shortcut: G">Grades</button>
-    <button class="pill schedule-btn" onclick="openTimerModal()" title="Shortcut: T">Focus</button>
-    <button class="pill schedule-btn" onclick="openHabitsModal()" title="Shortcut: H">Habits</button>
-    <button class="pill schedule-btn" onclick="openInsightsModal()" title="Shortcut: I">Insights</button>
+  <nav class="meta-row" aria-label="Dashboard tools">
+    <div class="primary-actions">
+      <button class="pill schedule-btn" onclick="openScheduleModal()" title="Shortcut: S">Schedule</button>
+      <button class="pill schedule-btn" onclick="openBudgetModal()" title="Shortcut: B">Budget</button>
+      <button class="pill schedule-btn" onclick="openGradesModal()" title="Shortcut: G">Grades</button>
+      <button class="pill schedule-btn" onclick="openTimerModal()" title="Shortcut: T">Focus</button>
+      <details class="tools-menu">
+        <summary class="pill schedule-btn" aria-label="More dashboard tools">More <span aria-hidden="true">▾</span></summary>
+        <div class="tools-menu-panel">
+          <button onclick="closeToolsMenu();openHabitsModal()"><span>Habits</span><kbd>H</kbd></button>
+          <button onclick="closeToolsMenu();openInsightsModal()"><span>Insights</span><kbd>I</kbd></button>
+          <button onclick="closeToolsMenu();editCountdown()"><span id="countdownMenuLabel">Countdown</span></button>
+          <button onclick="closeToolsMenu();openSyncOverlay()"><span id="syncMenuLabel">Set up sync</span></button>
+          <button onclick="closeToolsMenu();openShortcutsModal()"><span>Help &amp; shortcuts</span><kbd>?</kbd></button>
+        </div>
+      </details>
+    </div>
     <button class="pill schedule-btn" id="focusModeBtn" title="Shortcut: F"
       onpointerdown="focusBtnPointerDown(event)" onpointerup="focusBtnPointerUp(event)" onpointerleave="focusBtnPointerUp(event)" onpointercancel="focusBtnPointerUp(event)"
       onkeydown="if(event.key==='Enter'||event.key===' '){ event.preventDefault(); toggleFocusMode(); }">🧘 Focus Mode</button>
-    <button class="pill" id="countdownPill" onclick="editCountdown()" title="Click to change"></button>
-    <button class="pill sync-status-pill" id="syncStatusPill" onclick="openSyncOverlay()">🔒 Set up sync</button>
-    <button class="pill" onclick="openShortcutsModal()" title="Keyboard shortcuts & quick capture syntax" aria-label="Keyboard shortcuts and quick capture syntax">Help</button>
     <button class="pill command-button" onclick="openPalette()" title="Ctrl+K / ⌘K">Commands <span aria-hidden="true">⌘ K</span></button>
-    <div class="pill" id="dateTimePill"><b id="dateStr"></b> · <span id="timeStr"></span></div>
-    <div class="pill" id="weatherPill" style="position:relative;cursor:pointer;" onclick="toggleWeatherDetail()">
-      <svg class="loading-ring" viewBox="0 0 24 24" fill="none">
-        <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="24" y2="24">
-          <stop offset="0%" stop-color="#3d38c7"/><stop offset="100%" stop-color="#2cafc5"/>
-        </linearGradient></defs>
-        <circle cx="12" cy="12" r="9" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round" stroke-dasharray="42 14"/>
-      </svg>
-      <span class="loading-status" id="weatherStatus">Locating station…</span>
+    <div class="status-cluster">
+      <div class="pill" id="dateTimePill"><b id="dateStr"></b> · <span id="timeStr"></span></div>
+      <button class="pill" id="weatherPill" type="button" onclick="toggleWeatherDetail()" aria-label="Boston weather details">
+        <svg class="loading-ring" viewBox="0 0 24 24" fill="none">
+          <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="24" y2="24">
+            <stop offset="0%" stop-color="#3d38c7"/><stop offset="100%" stop-color="#2cafc5"/>
+          </linearGradient></defs>
+          <circle cx="12" cy="12" r="9" stroke="url(#ringGrad)" stroke-width="3" stroke-linecap="round" stroke-dasharray="42 14"/>
+        </svg>
+        <span class="loading-status" id="weatherStatus">Loading weather…</span>
+      </button>
     </div>
-  </div>
+  </nav>
 
   <div class="quick-capture-wrap" id="quickCaptureWrap">
     <span>⚡</span>
@@ -338,7 +344,7 @@
       </table>
     </div>
     <button class="add-row" onclick="addCourse()">+ Add course</button>
-    <div class="editor-note" style="margin-top:12px;">Enter your current grade percentage per course (from Canvas or your instructor) — GPA is computed live using a standard 4.0 scale, weighted by credit hours.</div>
+    <div class="editor-note" style="margin-top:12px;">Enter your current grade percentage per course. The estimate uses Wentworth’s published undergraduate grade weights and is weighted by credit hours. <a href="https://catalog.wit.edu/academic-policies-procedures/ug/grading/" target="_blank" rel="noopener noreferrer">View grading policy</a>.</div>
    </div>
   </div>
 
@@ -536,7 +542,7 @@
         <input id="lockToken" type="password" placeholder="ghp_..." autocomplete="off" onkeydown="if(event.key==='Enter'){ event.preventDefault(); handleUnlockSubmit(); }">
       </div>
       <div class="lock-checkbox" id="lockRememberRow">
-        <input type="checkbox" id="lockRemember" checked>
+        <input type="checkbox" id="lockRemember">
         <label for="lockRemember">Remember token on this device</label>
       </div>
       <div class="lock-checkbox" id="lockUseDifferentRow" style="display:none;">
@@ -553,6 +559,40 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="editDialogOverlay">
+    <form class="modal edit-dialog" id="editDialogForm" onsubmit="submitEditDialog(event)">
+      <div class="modal-header">
+        <div>
+          <h2 id="editDialogTitle">Edit</h2>
+          <p id="editDialogDescription" class="dialog-description"></p>
+        </div>
+        <button class="close-modal" type="button" onclick="cancelEditDialog()" aria-label="Close editor">✕</button>
+      </div>
+      <div id="editDialogFields" class="edit-dialog-fields"></div>
+      <div class="form-actions edit-dialog-actions">
+        <button class="btn-cancel" type="button" onclick="cancelEditDialog()">Cancel</button>
+        <button class="btn-save" id="editDialogSubmit" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="modal-overlay" id="editDialogOverlay">
+    <form class="modal edit-dialog" id="editDialogForm" onsubmit="submitEditDialog(event)">
+      <div class="modal-header">
+        <div>
+          <h2 id="editDialogTitle">Edit item</h2>
+          <p class="dialog-description" id="editDialogDescription"></p>
+        </div>
+        <button class="close-modal" type="button" onclick="cancelEditDialog()" aria-label="Close editor">✕</button>
+      </div>
+      <div class="edit-dialog-fields" id="editDialogFields"></div>
+      <div class="form-actions edit-dialog-actions">
+        <button class="btn-cancel" type="button" onclick="cancelEditDialog()">Cancel</button>
+        <button class="btn-save" id="editDialogSubmit" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+
   <footer>
     <div class="footer-actions">
       <button onclick="exportRecoveryCopy()">Export recovery copy</button>
@@ -565,6 +605,7 @@
 
   <div id="toastStack" role="status" aria-live="polite" aria-atomic="false"></div>
 
+<script src="dashboard-ui.js"></script>
 <script src="app.js"></script>
 
 </body>

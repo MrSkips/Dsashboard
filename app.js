@@ -1,6 +1,6 @@
-const DASHBOARD_VERSION = '1.2.0';
+const DASHBOARD_VERSION = '1.3.0';
 let __dailyPlannerReady = false; // flips true once classes/deadlines/events/todos have all been declared
-const DASHBOARD_UPDATED = 'Sep 2026 — reliability, accessible controls, and calmer layout';
+const DASHBOARD_UPDATED = 'Sep 2026 — mobile-first editing, persistent focus, and verified WIT grades';
 /* ============ live clock ============ */
 function updateClock(){
   const now = new Date();
@@ -14,24 +14,32 @@ setInterval(updateClock,1000*30);
 let countdown = load('wit_countdown', { label:'Finals Week', date:'' });
 function renderCountdown(){
   const pill = document.getElementById('countdownPill');
-  if(!pill) return;
+  const menuLabel = document.getElementById('countdownMenuLabel');
+  let text;
   if(!countdown.date){
-    pill.textContent = '🎯 Set a countdown';
-    return;
+    text = 'Set a countdown';
+  } else {
+    const due = new Date(countdown.date + 'T00:00:00');
+    const now = new Date(); now.setHours(0,0,0,0);
+    const days = Math.round((due - now) / 86400000);
+    if(days > 0) text = `${countdown.label || 'Countdown'} in ${days}d`;
+    else if(days === 0) text = `${countdown.label || 'Countdown'} is today`;
+    else text = `${countdown.label || 'Countdown'} was ${Math.abs(days)}d ago`;
   }
-  const due = new Date(countdown.date + 'T00:00:00');
-  const now = new Date(); now.setHours(0,0,0,0);
-  const days = Math.round((due - now) / 86400000);
-  if(days > 0) pill.textContent = `🎯 ${countdown.label || 'Countdown'} in ${days}d`;
-  else if(days === 0) pill.textContent = `🎯 ${countdown.label || 'Countdown'} is today`;
-  else pill.textContent = `🎯 ${countdown.label || 'Countdown'} was ${Math.abs(days)}d ago`;
+  if(pill) pill.textContent = '🎯 ' + text;
+  if(menuLabel) menuLabel.textContent = text;
 }
-function editCountdown(){
-  const label = prompt('Countdown label (e.g. Finals Week, Co-op starts):', countdown.label || '');
-  if(label === null) return;
-  const dateStr = prompt('Date (YYYY-MM-DD):', countdown.date || '');
-  if(dateStr === null) return;
-  countdown = { label: label.trim(), date: dateStr.trim() };
+async function editCountdown(){
+  const values = await openEditDialog({
+    title:'Countdown',
+    description:'Keep one important date visible without adding another permanent toolbar control.',
+    fields:[
+      {name:'label',label:'Label',value:countdown.label || '',placeholder:'Finals Week',required:true},
+      {name:'date',label:'Date',type:'date',value:countdown.date || '',required:true}
+    ]
+  });
+  if(!values) return;
+  countdown = { label: values.label.trim(), date: values.date };
   save('wit_countdown', countdown);
   renderCountdown();
 }
@@ -62,12 +70,18 @@ function renderSemesterBar(){
   else if(now > end) label.textContent = 'Semester complete';
   else label.textContent = `Week ${week} of ${totalWeeks} · ${pct.toFixed(0)}% through the semester`;
 }
-function editSemester(){
-  const start = prompt('Semester start date (YYYY-MM-DD):', semester.start || '');
-  if(start === null) return;
-  const end = prompt('Semester end date (YYYY-MM-DD):', semester.end || '');
-  if(end === null) return;
-  semester = { start: start.trim(), end: end.trim() };
+async function editSemester(){
+  const values = await openEditDialog({
+    title:'Semester dates',
+    description:'These dates drive the progress bar at the top of your dashboard.',
+    fields:[
+      {name:'start',label:'Start date',type:'date',value:semester.start || '',required:true},
+      {name:'end',label:'End date',type:'date',value:semester.end || '',required:true}
+    ]
+  });
+  if(!values) return;
+  if(values.end < values.start){ toast('Semester end must be after its start date.', true); return editSemester(); }
+  semester = { start: values.start, end: values.end };
   save('wit_semester', semester);
   renderSemesterBar();
 }
@@ -158,7 +172,9 @@ document.addEventListener('keydown', (e)=>{
   const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
   if(e.key === 'Escape'){
     if(focusModeActive){ toggleFocusMode(); return; }
-    document.querySelectorAll('.modal-overlay.open').forEach(o => hideOverlay(o.id));
+    const activeOverlay = Array.from(document.querySelectorAll('.modal-overlay.open')).at(-1);
+    if(activeOverlay) hideOverlay(activeOverlay.id);
+    else closeToolsMenu();
     return;
   }
   if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){
@@ -434,11 +450,11 @@ function renderLinks(){
     const fav = faviconUrl(l.url);
     const backupFav = faviconBackupUrl(l.url);
     div.innerHTML = `
-      <button class="del-btn" onclick="deleteLink(${i})">✕</button>
+      <button class="del-btn" onclick="deleteLink(${i})" aria-label="Delete ${esc(l.label)}">✕</button>
       <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer"><span class="icon" data-fallback="${initials}">${
         fav ? `<img src="${fav}" data-backup="${backupFav}" alt="" onerror="handleFaviconError(this)">` : initials
       }</span></a>
-      <span class="label" contenteditable="true" onblur="renameLink(${i}, this.textContent)">${esc(l.label)}</span>`;
+      <button class="label editable-text" type="button" onclick="editLinkDialog(${i})" aria-label="Edit ${esc(l.label)} link">${esc(l.label)}</button>`;
     el.appendChild(div);
   });
   const addBtn = document.createElement('button');
@@ -448,15 +464,35 @@ function renderLinks(){
   el.appendChild(addBtn);
 
 }
-function addLink(){
-  const label = prompt('Link label (e.g. Blackboard):');
-  if(!label) return;
-  const url = prompt('URL (e.g. https://...):');
-  if(!url) return;
-  if(safeUrl(url) === '#'){ toast('Enter a valid http or https link.', true); return; }
-  links.push({label, url:safeUrl(url)});
+async function addLink(){
+  const values = await openEditDialog({
+    title:'Add quick link',
+    fields:[
+      {name:'label',label:'Label',placeholder:'Blackboard',required:true},
+      {name:'url',label:'Web address',type:'url',placeholder:'https://example.com',required:true}
+    ],
+    submitLabel:'Add link'
+  });
+  if(!values) return;
+  if(safeUrl(values.url) === '#'){ toast('Enter a valid http or https link.', true); return addLink(); }
+  links.push({label:values.label.trim(), url:safeUrl(values.url)});
   save('wit_links', links); renderLinks();
   highlightEl(document.querySelectorAll('#linksList .qlink')[links.length-1]);
+}
+async function editLinkDialog(i){
+  const link = links[i];
+  const values = await openEditDialog({
+    title:'Edit quick link',
+    fields:[
+      {name:'label',label:'Label',value:link.label,required:true},
+      {name:'url',label:'Web address',type:'url',value:link.url,required:true}
+    ]
+  });
+  if(!values) return;
+  if(safeUrl(values.url) === '#'){ toast('Enter a valid http or https link.', true); return editLinkDialog(i); }
+  links[i] = {label:values.label.trim(),url:safeUrl(values.url)};
+  save('wit_links', links);
+  renderLinks();
 }
 function renameLink(i, text){
   links[i].label = text.trim() || links[i].label;
@@ -511,10 +547,10 @@ function renderClasses(){
     div.dataset.idx = i;
     const mapUrl = c.room ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Wentworth Institute of Technology ' + c.room)}` : '';
     div.innerHTML = `
-      <button class="del-btn" onclick="deleteClass(${i})">✕</button>
-      <div class="time" contenteditable="true" onblur="editClass(${i},'time',this.textContent)">${esc(c.time)}</div>
-      <div class="name" contenteditable="true" onblur="editClass(${i},'name',this.textContent)">${esc(c.name)}</div>
-      <div class="room" contenteditable="true" onblur="editClass(${i},'room',this.textContent)">${esc(c.room)}</div>
+      <button class="del-btn" onclick="deleteClass(${i})" aria-label="Delete ${esc(c.name)}">✕</button>
+      <div class="time">${esc(c.time)}</div>
+      <button class="name editable-text" type="button" onclick="editClassDialog(${i})" aria-label="Edit ${esc(c.name)}">${esc(c.name)}</button>
+      <div class="room">${esc(c.room)}</div>
       ${mapUrl ? `<a class="map-link" href="${mapUrl}" target="_blank" rel="noopener noreferrer" title="Open in Google Maps">📍 Map</a>` : ''}`;
     el.appendChild(div);
   });
@@ -537,6 +573,22 @@ function addClass(){
 function editClass(i, field, val){
   classes[i][field] = val.trim();
   save('wit_classes', classes);
+}
+async function editClassDialog(i){
+  const course = classes[i];
+  const values = await openEditDialog({
+    title:'Edit class',
+    description:course.source === 'ics' ? 'This edits today’s displayed occurrence. The imported schedule remains unchanged.' : '',
+    fields:[
+      {name:'name',label:'Class name',value:course.name,required:true},
+      {name:'time',label:'Time',value:course.time || '',placeholder:'2:00 PM – 3:15 PM'},
+      {name:'room',label:'Room or details',value:course.room || ''}
+    ]
+  });
+  if(!values) return;
+  Object.assign(course,{name:values.name.trim(),time:values.time.trim(),room:values.room.trim()});
+  save('wit_classes', classes);
+  renderClasses();
 }
 function deleteClass(i){
   // Deleting an ICS-derived class only removes it from today's view — it
@@ -959,9 +1011,9 @@ function renderDeadlines(){
     row.innerHTML = `
       <div class="date">${fmtDeadlineDate(d.date)}</div>
       <div class="info">
-        <b contenteditable="true" onblur="editDeadline(${i},'title',this.textContent)">${esc(d.title)}</b>
+        <button class="editable-text deadline-title" type="button" onclick="editDeadlineDialog(${i})" aria-label="Edit ${esc(d.title)}">${esc(d.title)}</button>
         <button class="priority-tag priority-${priority}" onclick="cyclePriority(${i})" title="Change priority" aria-label="Priority for ${esc(d.title)}: ${priority}">${priority}</button>${flagClass ? `<span class="deadline-flag ${flagClass}">${flagLabel}</span>` : ''}${repeatBadge}
-        ${d.link ? `<a href="${esc(safeUrl(d.link))}" target="_blank" rel="noopener noreferrer">View Details</a>` : `<a href="#" onclick="event.preventDefault(); const l=prompt('Add a link:'); if(l){editDeadline(${i},'link',l);}">Add link</a>`}
+        ${d.link ? `<a href="${esc(safeUrl(d.link))}" target="_blank" rel="noopener noreferrer">View details</a>` : `<button class="item-edit" type="button" onclick="editDeadlineLink(${i})">Add link</button>`}
       </div>
       <button class="icon-btn" style="margin-right:4px;" onclick="completeDeadline(${i})" title="${d.repeat === 'weekly' ? 'Complete — rolls forward 7 days' : 'Complete'}" aria-label="Complete ${esc(d.title)}">✓</button>
       <button class="del-btn" onclick="deleteDeadline(${i})" aria-label="Delete ${esc(d.title)}">✕</button>`;
@@ -996,6 +1048,32 @@ function addDeadline(){
 function editDeadline(i, field, val){
   deadlines[i][field] = (typeof val === 'string') ? val.trim() : val;
   save('wit_deadlines', deadlines); renderDeadlines();
+}
+async function editDeadlineDialog(i){
+  const deadline = deadlines[i];
+  const values = await openEditDialog({
+    title:'Edit deadline',
+    fields:[
+      {name:'title',label:'Title',value:deadline.title,required:true},
+      {name:'date',label:'Due date',type:'date',value:deadline.date || ''},
+      {name:'link',label:'Details link',type:'url',value:deadline.link || '',placeholder:'https://…'},
+      {name:'priority',label:'Priority',type:'select',value:deadline.priority || 'Medium',options:['Low','Medium','High']}
+    ]
+  });
+  if(!values) return;
+  if(values.link && safeUrl(values.link) === '#'){ toast('Enter a valid http or https link.', true); return editDeadlineDialog(i); }
+  Object.assign(deadline,{title:values.title.trim(),date:values.date,link:values.link ? safeUrl(values.link) : '',priority:values.priority});
+  save('wit_deadlines', deadlines);
+  renderDeadlines();
+}
+async function editDeadlineLink(i){
+  const values = await openEditDialog({
+    title:'Add deadline link',
+    fields:[{name:'link',label:'Web address',type:'url',value:deadlines[i].link || '',placeholder:'https://…',required:true}]
+  });
+  if(!values) return;
+  if(safeUrl(values.link) === '#'){ toast('Enter a valid http or https link.', true); return editDeadlineLink(i); }
+  editDeadline(i,'link',safeUrl(values.link));
 }
 function toggleDeadlineRepeat(i){
   deadlines[i].repeat = deadlines[i].repeat === 'weekly' ? 'none' : 'weekly';
@@ -1042,10 +1120,10 @@ function renderCoop(){
     const items = coop.map((c,i)=>({...c, _idx:i})).filter(c => (c.status||'Applied') === status);
     const cards = items.map(c => `
       <div class="kanban-card" data-idx="${c._idx}" draggable="true" ondragstart="kanbanDragStart(event,${c._idx})">
-        <button class="del-btn" style="position:absolute;top:4px;right:4px;" onclick="deleteCoop(${c._idx})">✕</button>
-        <div contenteditable="true" style="font-weight:600;font-size:13px;padding-right:16px;" onblur="editCoop(${c._idx},'company',this.textContent)">${esc(c.company)}</div>
-        <div contenteditable="true" style="font-size:11px;color:var(--muted);margin-top:2px;" onblur="editCoop(${c._idx},'role',this.textContent)">${esc(c.role)}</div>
-        <div style="margin-top:6px;">${c.link ? `<a class="post-link" href="${esc(safeUrl(c.link))}" target="_blank" rel="noopener noreferrer" style="font-size:11px;">🔗 Posting</a>` : `<a href="#" style="font-size:11px;color:var(--muted);" onclick="event.preventDefault(); const l=prompt('Posting link:'); if(l){editCoop(${c._idx},'link',l);}">＋ Link</a>`}</div>
+        <button class="del-btn" style="position:absolute;top:4px;right:4px;" onclick="deleteCoop(${c._idx})" aria-label="Delete ${esc(c.company)}">✕</button>
+        <button class="editable-text" type="button" style="font-weight:600;font-size:13px;padding-right:16px;" onclick="editCoopDialog(${c._idx})" aria-label="Edit ${esc(c.company)} application">${esc(c.company)}</button>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${esc(c.role)}</div>
+        <div style="margin-top:6px;">${c.link ? `<a class="post-link" href="${esc(safeUrl(c.link))}" target="_blank" rel="noopener noreferrer" style="font-size:11px;">🔗 Posting</a>` : `<button class="item-edit" type="button" onclick="editCoopDialog(${c._idx})">Add posting link</button>`}</div>
         <select class="coop-status" aria-label="Status for ${esc(c.company)}" onchange="editCoop(${c._idx},'status',this.value)">${COOP_STATUSES.map(value=>`<option ${value===c.status?'selected':''}>${value}</option>`).join('')}</select><button class="kanban-notes-toggle" onclick="toggleCoopNotes(${c._idx})">Notes${c.notes ? ' ✓' : ''}</button>
         <div class="kanban-notes" id="coopNotes${c._idx}" style="display:none;">
           <textarea onblur="editCoop(${c._idx},'notes',this.value)" placeholder="Interview prep, contact, stipend...">${esc(c.notes||'')}</textarea>
@@ -1093,6 +1171,23 @@ function editCoop(i, field, val){
   coop[i][field] = (typeof val === 'string') ? val.trim() : val;
   save('wit_coop', coop); renderCoop();
 }
+async function editCoopDialog(i){
+  const item = coop[i];
+  const values = await openEditDialog({
+    title:'Edit co-op application',
+    fields:[
+      {name:'company',label:'Company',value:item.company,required:true},
+      {name:'role',label:'Role',value:item.role || ''},
+      {name:'link',label:'Posting link',type:'url',value:item.link || '',placeholder:'https://…'},
+      {name:'status',label:'Status',type:'select',value:item.status || 'Applied',options:COOP_STATUSES}
+    ]
+  });
+  if(!values) return;
+  if(values.link && safeUrl(values.link) === '#'){ toast('Enter a valid http or https link.', true); return editCoopDialog(i); }
+  Object.assign(item,{company:values.company.trim(),role:values.role.trim(),link:values.link ? safeUrl(values.link) : '',status:values.status});
+  save('wit_coop', coop);
+  renderCoop();
+}
 function deleteCoop(i){
   const removed = coop[i];
   coop.splice(i,1);
@@ -1126,9 +1221,9 @@ function renderTodos(){
     row.dataset.idx = t._idx;
     row.innerHTML = `
       <input type="checkbox" aria-label="Complete ${esc(t.text)}" ${t.done?'checked':''} onchange="toggleTodo(${t._idx})">
-      <label contenteditable="true" onblur="editTodo(${t._idx}, this.textContent)">${esc(t.text)}</label>
+      <button class="editable-text" type="button" onclick="editTodoDialog(${t._idx})" aria-label="Edit task: ${esc(t.text)}">${esc(t.text)}</button>
       <span class="cat-badge">${esc(t.category || 'Personal')}</span>
-      <button class="del-btn" onclick="deleteTodo(${t._idx})">✕</button>`;
+      <button class="del-btn" onclick="deleteTodo(${t._idx})" aria-label="Delete task: ${esc(t.text)}">✕</button>`;
     todoListEl.appendChild(row);
   });
 
@@ -1142,6 +1237,20 @@ function setTodoFilter(cat){
 }
 function toggleTodo(i){ todos[i].done = !todos[i].done; save('wit_todos', todos); renderTodos(); }
 function editTodo(i, text){ todos[i].text = text.trim() || todos[i].text; save('wit_todos', todos); renderTodos(); }
+async function editTodoDialog(i){
+  const task = todos[i];
+  const values = await openEditDialog({
+    title:'Edit task',
+    fields:[
+      {name:'text',label:'Task',value:task.text,required:true},
+      {name:'category',label:'Category',type:'select',value:task.category || 'Personal',options:['Academic','Co-op','Personal']}
+    ]
+  });
+  if(!values) return;
+  Object.assign(task,{text:values.text.trim(),category:values.category});
+  save('wit_todos', todos);
+  renderTodos();
+}
 function deleteTodo(i){
   const removed = todos[i];
   todos.splice(i,1); save('wit_todos', todos); renderTodos();
@@ -1506,11 +1615,11 @@ function renderIncome(){
   }
   el.innerHTML = recurringIncome.map((inc,i)=>`
     <div class="recurring-row">
-      <span contenteditable="true" onblur="editIncome(${i},'name',this.textContent)">${esc(inc.name)}</span>
+      <button class="editable-text" type="button" onclick="editIncomeDialog(${i})" aria-label="Edit ${esc(inc.name)} income">${esc(inc.name)}</button>
       <span style="display:flex;align-items:center;gap:6px;">
-        <span contenteditable="true" onblur="editIncome(${i},'amount',this.textContent)">$${Number(inc.amount).toFixed(2)}</span>
+        <span>$${Number(inc.amount).toFixed(2)}</span>
         <span style="color:var(--muted);">Every ${WEEKDAY_NAMES[inc.weekday]}</span>
-        <button class="del-btn" onclick="deleteIncome(${i})">✕</button>
+        <button class="del-btn" onclick="deleteIncome(${i})" aria-label="Delete ${esc(inc.name)} income">✕</button>
       </span>
     </div>`).join('');
 
@@ -1539,6 +1648,22 @@ function editIncome(i, field, val){
   }
   save('wit_recurring_income', recurringIncome);
   renderIncome();
+}
+async function editIncomeDialog(i){
+  const income = recurringIncome[i];
+  const values = await openEditDialog({
+    title:'Edit recurring income',
+    fields:[
+      {name:'name',label:'Name',value:income.name,required:true},
+      {name:'amount',label:'Amount',type:'number',value:income.amount,min:0.01,step:'0.01',required:true},
+      {name:'weekday',label:'Payday',type:'select',value:String(income.weekday),options:WEEKDAY_NAMES.map((label,value)=>({label,value:String(value)}))}
+    ]
+  });
+  if(!values) return;
+  Object.assign(income,{name:values.name.trim(),amount:Number(values.amount),weekday:Number(values.weekday)});
+  save('wit_recurring_income', recurringIncome);
+  renderIncome();
+  renderBudget();
 }
 function deleteIncome(i){
   const removed = recurringIncome[i];
@@ -1580,17 +1705,21 @@ function setBudgetView(mode){
   renderBudgetSnapshot();
 }
 function budgetLimitKey(){ return budgetViewMode === 'week' ? 'weekly' : 'monthly'; }
-function setBudgetLimits(){
-  const current = budgetLimits[budgetLimitKey()] || 0;
-  const label = budgetViewMode === 'week' ? 'weekly' : 'monthly';
-  const raw = prompt(`Set your ${label} spending limit (enter 0 to clear it):`, current ? String(current) : '');
-  if(raw === null) return;
-  const limit = Number(raw);
-  if(!Number.isFinite(limit) || limit < 0){ toast('Enter a non-negative spending limit.', true); return; }
-  budgetLimits[budgetLimitKey()] = Math.round(limit * 100) / 100;
+async function setBudgetLimits(){
+  const values = await openEditDialog({
+    title:'Spending limits',
+    description:'Use zero or leave a field blank to clear that limit.',
+    fields:[
+      {name:'weekly',label:'Weekly limit',type:'number',value:budgetLimits.weekly || '',min:0,step:'0.01'},
+      {name:'monthly',label:'Monthly limit',type:'number',value:budgetLimits.monthly || '',min:0,step:'0.01'}
+    ]
+  });
+  if(!values) return;
+  budgetLimits.weekly = Math.round(Number(values.weekly || 0) * 100) / 100;
+  budgetLimits.monthly = Math.round(Number(values.monthly || 0) * 100) / 100;
   save('wit_budget_limits', budgetLimits);
   renderBudgetSnapshot();
-  toast(limit ? `${label[0].toUpperCase()+label.slice(1)} limit set to ${money(limit)}.` : `${label[0].toUpperCase()+label.slice(1)} limit cleared.`);
+  toast('Weekly and monthly limits updated.');
 }
 function renderBudgetSnapshot(){
   const body = document.getElementById('budgetSnapshotBody');
@@ -1603,6 +1732,13 @@ function renderBudgetSnapshot(){
   const limit = Number(budgetLimits[budgetLimitKey()] || 0);
   const remaining = limit - spent;
   const percent = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0;
+  const periodStart = budgetPeriodStart(budgetViewMode, now);
+  const periodEnd = budgetPeriodEnd(budgetViewMode, now);
+  const elapsedRatio = Math.min(1,Math.max(0,(now-periodStart)/(periodEnd-periodStart)));
+  const paceDifference = spent - (limit * elapsedRatio);
+  const paceText = !limit ? '' : paceDifference > 0
+    ? `${money(paceDifference)} ahead of your spending pace`
+    : `${money(Math.abs(paceDifference))} below your spending pace`;
   const periodLabel = budgetViewMode === 'week'
     ? `${budgetPeriodStart('week', now).toLocaleDateString(undefined,{month:'short',day:'numeric'})}–${budgetPeriodEnd('week', now).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`
     : now.toLocaleDateString(undefined,{month:'long',year:'numeric'});
@@ -1619,6 +1755,7 @@ function renderBudgetSnapshot(){
       <div><span>${limit ? `${money(spent)} of ${money(limit)} limit` : 'No spending limit set'}</span><b>${limit ? `${percent}%` : '—'}</b></div>
       <div class="budget-progress" role="progressbar" aria-label="${budgetViewMode} spending limit" aria-valuemin="0" aria-valuemax="${limit || 1}" aria-valuenow="${spent}"><span style="width:${percent}%;"></span></div>
       <small>${limit ? (remaining >= 0 ? `${money(remaining)} remaining` : `${money(Math.abs(remaining))} over limit`) : 'Set a limit to track spending pace.'}</small>
+      ${paceText ? `<small class="${paceDifference > 0 ? 'budget-negative' : 'budget-income'}">${paceText}</small>` : ''}
     </div>`;
 }
 function ordinalSuffix(n){
@@ -1926,11 +2063,11 @@ function renderRecurring(){
   }
   el.innerHTML = recurringBills.map((b,i)=>`
     <div class="recurring-row" data-idx="${i}">
-      <span contenteditable="true" onblur="editBill(${i},'name',this.textContent)">${esc(b.name)}</span>
+      <button class="editable-text" type="button" onclick="editBillDialog(${i})" aria-label="Edit ${esc(b.name)} bill">${esc(b.name)}</button>
       <span style="display:flex;align-items:center;gap:6px;">
-        <span contenteditable="true" onblur="editBill(${i},'amount',this.textContent)">$${Number(b.amount).toFixed(2)}</span>
+        <span>$${Number(b.amount).toFixed(2)}</span>
         <span style="color:var(--muted);">Due ${b.day}${ordinalSuffix(b.day)}</span>
-        <button class="del-btn" onclick="deleteBill(${i})">✕</button>
+        <button class="del-btn" onclick="deleteBill(${i})" aria-label="Delete ${esc(b.name)} bill">✕</button>
       </span>
     </div>`).join('');
 
@@ -1947,6 +2084,21 @@ function addBill(){
   document.getElementById('billDay').value = '';
   toggleForm('billForm');
   highlightEl(document.querySelectorAll('#recurringList .recurring-row')[recurringBills.length-1]);
+}
+async function editBillDialog(i){
+  const bill = recurringBills[i];
+  const values = await openEditDialog({
+    title:'Edit recurring bill',
+    fields:[
+      {name:'name',label:'Name',value:bill.name,required:true},
+      {name:'amount',label:'Amount',type:'number',value:bill.amount,min:0.01,step:'0.01',required:true},
+      {name:'day',label:'Due day of month',type:'number',value:bill.day,min:1,max:31,step:1,required:true}
+    ]
+  });
+  if(!values) return;
+  Object.assign(bill,{name:values.name.trim(),amount:Number(values.amount),day:Number(values.day)});
+  save('wit_recurring', recurringBills);
+  renderRecurring();
 }
 function editBill(i, field, val){
   if(field === 'amount'){
@@ -2459,9 +2611,15 @@ function renderYearGrid(refDate){
 /* ============ Welcome name persistence ============ */
 const nameEl = document.getElementById('welcomeName');
 nameEl.textContent = localStorage.getItem('wit_name') || 'ALEX J.';
-nameEl.addEventListener('blur', ()=> localStorage.setItem('wit_name', nameEl.textContent.trim()));
-if(typeof scheduleCloudPush === 'function'){
-  nameEl.addEventListener('blur', ()=> scheduleCloudPush());
+async function editDashboardName(){
+  const values = await openEditDialog({
+    title:'Dashboard name',
+    fields:[{name:'name',label:'Name shown in the header',value:nameEl.textContent.trim(),required:true}]
+  });
+  if(!values) return;
+  nameEl.textContent = values.name.trim();
+  localStorage.setItem('wit_name', nameEl.textContent);
+  if(typeof scheduleCloudPush === 'function') scheduleCloudPush();
 }
 
 /* ============ Cross-device sync via an encrypted GitHub Gist ============ */
@@ -2539,7 +2697,7 @@ function gatherState(){
     links, schedule, classes, deadlines, events, coop, todos,
     transactions, budgetViewMode, budgetLimits, recurringBills, simBudget,
     grades, recurringIncome, incomeLog, countdown,
-    habits, semester, focusSessions, gpaHistory,
+    habits, semester, focusSessions, gpaHistory, timerSettings,
     name: localStorage.getItem('wit_name') || ''
   };
 }
@@ -2574,7 +2732,7 @@ function validateBundle(bundle){
     recognized++;
     if(!Array.isArray(bundle[key]) || !bundle[key].every(check)) throw new Error('Invalid '+key+' section; nothing was imported');
   }
-  for(const key of ['incomeLog','countdown','semester','simBudget']){
+  for(const key of ['incomeLog','countdown','semester','simBudget','timerSettings']){
     if(!Object.hasOwn(bundle,key)) continue;
     recognized++;
     if(!object(bundle[key])) throw new Error('Invalid '+key+' section');
@@ -2585,6 +2743,7 @@ function validateBundle(bundle){
   if(bundle.countdown && (!text(bundle.countdown.label) || !(bundle.countdown.date===''||date(bundle.countdown.date)))) throw new Error('Invalid countdown');
   if(bundle.semester && !['start','end'].every(k=>bundle.semester[k]===''||date(bundle.semester[k]))) throw new Error('Invalid semester');
   if(bundle.simBudget && (!Array.isArray(bundle.simBudget.categories) || !bundle.simBudget.categories.every(r=>record(r,{name:text,value:number})&&text(r.name)))) throw new Error('Invalid simulated budget');
+  if(bundle.timerSettings && (!number(bundle.timerSettings.focusMin) || !number(bundle.timerSettings.breakMin) || Number(bundle.timerSettings.focusMin)<1 || Number(bundle.timerSettings.focusMin)>180 || Number(bundle.timerSettings.breakMin)<1 || Number(bundle.timerSettings.breakMin)>60)) throw new Error('Invalid timer settings');
   if(bundle.name !== undefined && !text(bundle.name)) throw new Error('Invalid name');
   if(!recognized) throw new Error('This file contains no dashboard sections');
   return bundle;
@@ -2593,7 +2752,7 @@ function applyCloudState(bundle){
   validateBundle(bundle);
   // Commit storage first, rolling back every touched key if storage is full.
   const state = {...gatherState(), ...bundle};
-  const keys = {links:'links',schedule:'schedule',classes:'classes',deadlines:'deadlines',events:'events',coop:'coop',todos:'todos',transactions:'transactions',budgetViewMode:'budget_view',budgetLimits:'budget_limits',recurringBills:'recurring',simBudget:'simBudget',grades:'grades',recurringIncome:'recurring_income',incomeLog:'income_log',countdown:'countdown',habits:'habits',semester:'semester',focusSessions:'focus_sessions',gpaHistory:'gpa_history'};
+  const keys = {links:'links',schedule:'schedule',classes:'classes',deadlines:'deadlines',events:'events',coop:'coop',todos:'todos',transactions:'transactions',budgetViewMode:'budget_view',budgetLimits:'budget_limits',recurringBills:'recurring',simBudget:'simBudget',grades:'grades',recurringIncome:'recurring_income',incomeLog:'income_log',countdown:'countdown',habits:'habits',semester:'semester',focusSessions:'focus_sessions',gpaHistory:'gpa_history',timerSettings:'timer_settings'};
   const previous = new Map();
   try {
     localStorage.setItem('wit_before_restore', JSON.stringify(gatherState()));
@@ -2611,7 +2770,7 @@ function applyCloudState(bundle){
     }
     throw new Error('Not enough device storage to restore safely. Export a backup and free space first.');
   }
-  ({links,schedule,classes,deadlines,events,coop,todos,transactions,budgetViewMode,budgetLimits,recurringBills,simBudget,grades,recurringIncome,incomeLog,countdown,habits,semester,focusSessions,gpaHistory} = state);
+  ({links,schedule,classes,deadlines,events,coop,todos,transactions,budgetViewMode,budgetLimits,recurringBills,simBudget,grades,recurringIncome,incomeLog,countdown,habits,semester,focusSessions,gpaHistory,timerSettings} = state);
   nameEl.textContent = state.name || 'Your dashboard';
   refreshClassesForToday();
   renderLinks(); renderClasses(); renderDeadlines(); renderCoop(); renderTodos(); renderBudget();
@@ -2622,6 +2781,8 @@ function applyCloudState(bundle){
 function setSyncStatusPill(text){
   const pill = document.getElementById('syncStatusPill');
   if(pill) pill.textContent = text;
+  const menuLabel = document.getElementById('syncMenuLabel');
+  if(menuLabel) menuLabel.textContent = String(text).replace(/^[🔒🔓]\s*/, '');
 }
 function scheduleCloudPush(){
   if(!syncEnabled || !syncCryptoKey || !syncGistId || !syncToken) return;
@@ -2733,7 +2894,14 @@ async function handleUnlockSubmit(){
       }
     }
 
-    if(bundle && JSON.stringify(bundle) !== JSON.stringify(gatherState()) && !confirm('Load the encrypted cloud copy on this device? Your current dashboard will be kept as a recovery backup.')){statusEl.textContent='Sync canceled; local data kept.';return;}
+    if(bundle && JSON.stringify(bundle) !== JSON.stringify(gatherState())){
+      const approved = await openConfirmDialog({
+        title:'Load cloud dashboard?',
+        description:'The cloud copy differs from this device. Loading it will keep your current dashboard as a recovery copy.',
+        confirmLabel:'Load cloud copy'
+      });
+      if(!approved){ statusEl.textContent='Sync canceled; local data kept.'; return; }
+    }
     syncToken = token;
     syncCryptoKey = key;
     syncSaltB64 = toB64(salt);
@@ -2819,11 +2987,7 @@ function exportBackup(){
   const backup = {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    name: localStorage.getItem('wit_name') || '',
-    links, schedule, classes, deadlines, events, coop, todos,
-    transactions, budgetViewMode, budgetLimits, recurringBills, simBudget,
-    grades, recurringIncome, incomeLog, countdown,
-    habits, semester, focusSessions, gpaHistory
+    ...gatherState()
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2840,11 +3004,16 @@ function handleBackupImport(event){
   const file = event.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = (e)=>{
+  reader.onload = async (e)=>{
     try{
       const backup = JSON.parse(e.target.result);
       validateBundle(backup);
-      if(!confirm('Replace matching dashboard sections with this backup? A recovery copy of your current data will be kept on this device.')) return;
+      const approved = await openConfirmDialog({
+        title:'Restore this backup?',
+        description:'Matching dashboard sections will be replaced. Your current data will be kept as a recovery copy.',
+        confirmLabel:'Restore backup'
+      });
+      if(!approved) return;
       applyCloudState(backup); // same shape as a cloud sync bundle, so this reuses that logic
       scheduleCloudPush();
       toast('Backup restored. Previous data is available under Export recovery copy.');
@@ -2870,12 +3039,12 @@ function closeBudgetModal(){
 
 /* ============ Grades / GPA tracker ============ */
 let grades = load('wit_grades', []);
-// Standard 4.0-scale conversion table, checked from highest cutoff down.
+// Wentworth's published undergraduate grade weights and numerical ranges.
 const GPA_SCALE = [
-  {min:93,letter:'A',points:4.0}, {min:90,letter:'A-',points:3.7},
-  {min:87,letter:'B+',points:3.3}, {min:83,letter:'B',points:3.0}, {min:80,letter:'B-',points:2.7},
-  {min:77,letter:'C+',points:2.3}, {min:73,letter:'C',points:2.0}, {min:70,letter:'C-',points:1.7},
-  {min:67,letter:'D+',points:1.3}, {min:63,letter:'D',points:1.0}, {min:60,letter:'D-',points:0.7},
+  {min:93,letter:'A',points:4.0}, {min:90,letter:'A-',points:3.67},
+  {min:87,letter:'B+',points:3.33}, {min:83,letter:'B',points:3.0}, {min:80,letter:'B-',points:2.67},
+  {min:77,letter:'C+',points:2.33}, {min:73,letter:'C',points:2.0}, {min:70,letter:'C-',points:1.67},
+  {min:67,letter:'D+',points:1.33}, {min:60,letter:'D',points:1.0},
   {min:-Infinity,letter:'F',points:0.0}
 ];
 function gradeInfoForPercent(pct){
@@ -2896,13 +3065,13 @@ function renderGrades(){
   el.innerHTML = grades.length ? grades.map((g,i)=>{
     const info = gradeInfoForPercent(g.percent);
     return `<tr data-idx="${i}">
-      <td contenteditable="true" onblur="editCourse(${i},'name',this.textContent)">${esc(g.name)}</td>
-      <td contenteditable="true" onblur="editCourse(${i},'credits',this.textContent)">${esc(String(g.credits))}</td>
-      <td contenteditable="true" onblur="editCourse(${i},'percent',this.textContent)">${g.percent === '' || g.percent === null ? '' : esc(String(g.percent))}</td>
+      <td><button class="editable-text" type="button" onclick="editCourseDialog(${i})" aria-label="Edit ${esc(g.name)}">${esc(g.name)}</button></td>
+      <td>${esc(String(g.credits))}</td>
+      <td>${g.percent === '' || g.percent === null ? '—' : esc(String(g.percent))}</td>
       <td>${info.letter}</td>
       <td style="white-space:nowrap;">
-        <button class="del-btn" onclick="calcWhatIf(${i})" title="What-if calculator">🧮</button>
-        <button class="del-btn" onclick="deleteCourse(${i})">✕</button>
+        <button class="del-btn" onclick="calcWhatIf(${i})" title="What-if calculator" aria-label="Calculate target grade for ${esc(g.name)}">🧮</button>
+        <button class="del-btn" onclick="deleteCourse(${i})" aria-label="Delete ${esc(g.name)}">✕</button>
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="5" class="empty-note">Add a course to track grades and estimate GPA.</td></tr>';
@@ -2914,26 +3083,45 @@ function renderGrades(){
 }
 // "What do I need on the final to hit my target grade?" — takes the course's
 // current percent as the grade for the portion of the course already graded.
-function calcWhatIf(i){
+async function calcWhatIf(i){
   const course = grades[i];
   const current = Number(course.percent);
   if(course.percent === '' || course.percent === null || isNaN(current)){
     toast('Enter a current grade % for this course first.', true);
     return;
   }
-  const remainingStr = prompt(`${course.name}: what % of your grade is left (e.g. final exam = 20)?`, '20');
-  if(remainingStr === null) return;
-  const remaining = parseFloat(remainingStr);
-  if(isNaN(remaining) || remaining <= 0 || remaining > 100){ toast('Enter a remaining weight between 1 and 100.', true); return; }
-  const targetStr = prompt(`Target overall grade % for ${course.name}?`, '90');
-  if(targetStr === null) return;
-  const target = parseFloat(targetStr);
-  if(isNaN(target)){ toast('Enter a valid target grade %.', true); return; }
+  const values = await openEditDialog({
+    title:`Target grade for ${course.name}`,
+    description:`Your current grade is ${current}%.`,
+    fields:[
+      {name:'remaining',label:'Course weight remaining (%)',type:'number',value:20,min:1,max:100,step:'0.1',required:true},
+      {name:'target',label:'Target overall grade (%)',type:'number',value:90,min:0,max:100,step:'0.1',required:true}
+    ],
+    submitLabel:'Calculate'
+  });
+  if(!values) return;
+  const remaining = Number(values.remaining);
+  const target = Number(values.target);
   const remainingFrac = remaining / 100;
   const needed = (target - current * (1 - remainingFrac)) / remainingFrac;
   if(needed > 100) toast(`Even a perfect 100% on the remaining ${remaining}% won't reach ${target}% — you'd need ${needed.toFixed(1)}%.`, true);
   else if(needed < 0) toast(`You've already secured better than ${target}% — even a 0% on the rest keeps you above it.`);
   else toast(`You need ${needed.toFixed(1)}% on the remaining ${remaining}% of ${course.name} to hit ${target}% overall.`);
+}
+async function editCourseDialog(i){
+  const course = grades[i];
+  const values = await openEditDialog({
+    title:'Edit course',
+    fields:[
+      {name:'name',label:'Course name',value:course.name,required:true},
+      {name:'credits',label:'Credits',type:'number',value:course.credits,min:0.5,max:12,step:'0.5',required:true},
+      {name:'percent',label:'Current grade (%)',type:'number',value:course.percent ?? '',min:0,max:100,step:'0.01'}
+    ]
+  });
+  if(!values) return;
+  Object.assign(course,{name:values.name.trim(),credits:Number(values.credits),percent:values.percent === '' ? '' : Number(values.percent)});
+  save('wit_grades', grades);
+  renderGrades();
 }
 function addCourse(){
   grades.push({name:'New Course', credits:3, percent:''});
@@ -2970,7 +3158,22 @@ function closeGradesModal(){
 
 /* ============ Focus / Pomodoro timer ============ */
 let timerSettings = load('wit_timer_settings', { focusMin:25, breakMin:5 });
-let timerState = { mode:'focus', remaining: timerSettings.focusMin*60, running:false, intervalId:null };
+const savedTimerState = load('wit_timer_state', { mode:'focus', remaining:timerSettings.focusMin*60, running:false, endsAt:null });
+let timerState = {
+  mode:['focus','break'].includes(savedTimerState.mode) ? savedTimerState.mode : 'focus',
+  remaining:Number.isFinite(Number(savedTimerState.remaining)) ? Math.max(0,Number(savedTimerState.remaining)) : timerSettings.focusMin*60,
+  running:!!savedTimerState.running && Number.isFinite(Number(savedTimerState.endsAt)),
+  endsAt:Number(savedTimerState.endsAt) || null,
+  intervalId:null
+};
+function persistTimerState(){
+  save('wit_timer_state',{
+    mode:timerState.mode,
+    remaining:timerState.remaining,
+    running:timerState.running,
+    endsAt:timerState.endsAt
+  });
+}
 function formatTimer(sec){
   const m = Math.floor(sec/60), s = sec%60;
   return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
@@ -2999,8 +3202,10 @@ function tickTimer(){
     timerState.remaining = (timerState.mode === 'focus' ? timerSettings.focusMin : timerSettings.breakMin) * 60;
     timerState.endsAt = Date.now() + timerState.remaining * 1000;
     if(finishedMode === 'focus') logFocusSession(timerSettings.focusMin);
+    persistTimerState();
     toast(finishedMode === 'focus' ? '⏱ Focus session done — take a break!' : '⏱ Break\'s over — back to it.');
   }
+  persistTimerState();
   renderTimer();
 }
 function toggleTimer(){
@@ -3020,6 +3225,8 @@ function resetTimer(){
   timerState.mode = 'focus';
   timerState.running = false;
   timerState.remaining = timerSettings.focusMin * 60;
+  timerState.endsAt = null;
+  persistTimerState();
   renderTimer();
 }
 function saveTimerSettings(){
@@ -3041,6 +3248,11 @@ function closeTimerModal(){
   hideOverlay('timerOverlay');
   if(focusModeActive) setFocusMode(false);
 }
+if(timerState.running){
+  tickTimer();
+  timerState.intervalId = setInterval(tickTimer,1000);
+}
+window.addEventListener('pagehide',persistTimerState);
 
 /* ============ Habit / streak tracker ============ */
 let habits = load('wit_habits', []);
@@ -3073,9 +3285,9 @@ function renderHabits(){
     }).join('');
     return `<div class="habit-row" data-idx="${hi}">
       <div class="habit-row-head">
-        <span contenteditable="true" onblur="editHabitName(${hi},this.textContent)">${esc(h.name)}</span>
+        <button class="editable-text" type="button" onclick="editHabitDialog(${hi})" aria-label="Edit habit: ${esc(h.name)}">${esc(h.name)}</button>
         <span class="habit-streak">🔥 ${streak}</span>
-        <button class="del-btn" onclick="deleteHabit(${hi})">✕</button>
+        <button class="del-btn" onclick="deleteHabit(${hi})" aria-label="Delete habit: ${esc(h.name)}">✕</button>
       </div>
       <div class="habit-grid">${cells}</div>
     </div>`;
@@ -3093,6 +3305,14 @@ function editHabitName(hi, val){
   habits[hi].name = val.trim() || habits[hi].name;
   save('wit_habits', habits);
   renderHabits();
+}
+async function editHabitDialog(hi){
+  const values = await openEditDialog({
+    title:'Edit habit',
+    fields:[{name:'name',label:'Habit name',value:habits[hi].name,required:true}]
+  });
+  if(!values) return;
+  editHabitName(hi,values.name);
 }
 function addHabit(){
   const name = document.getElementById('habitName').value.trim();
@@ -3516,11 +3736,12 @@ function applyCardOrder(){
   if(!raw) return;
   try{
     const order = JSON.parse(raw);
+    const cards = new Map(Array.from(document.querySelectorAll('#mainGrid .card[data-card-id]')).map(card=>[card.dataset.cardId,card]));
     document.querySelectorAll('#mainGrid > .col-span-1').forEach((col,ci)=>{
       const ids = order['col'+ci];
       if(!ids) return;
       ids.forEach(id=>{
-        const card = col.querySelector(`.card[data-card-id="${id}"]`);
+        const card = cards.get(id);
         if(card) col.appendChild(card);
       });
     });
@@ -3538,7 +3759,7 @@ function initCardDragReorder(){
       card.addEventListener('dragend', ()=> card.classList.remove('dragging'));
       card.addEventListener('dragover', (e)=>{
         e.preventDefault();
-        const dragging = col.querySelector('.card.dragging');
+        const dragging = document.querySelector('#mainGrid .card.dragging');
         if(!dragging || dragging === card) return;
         const rect = card.getBoundingClientRect();
         const before = (e.clientY - rect.top) < rect.height / 2;
@@ -3546,10 +3767,21 @@ function initCardDragReorder(){
       });
       card.addEventListener('drop', (e)=>{ e.preventDefault(); saveCardOrder(); });
     });
+    col.addEventListener('dragover',e=>e.preventDefault());
+    col.addEventListener('drop',e=>{
+      const dragging=document.querySelector('#mainGrid .card.dragging');
+      if(dragging && e.target===col){e.preventDefault();col.appendChild(dragging);saveCardOrder();}
+    });
   });
 }
 applyCardOrder();
-document.querySelectorAll('#mainGrid > .col-span-1 > .card[data-card-id]').forEach(c => c.setAttribute('draggable','true'));
+function updateCardDraggable(){
+  const touchLayout=window.matchMedia?.('(max-width:700px), (pointer:coarse)').matches || false;
+  const enabled=!touchLayout;
+  document.querySelectorAll('#mainGrid .card[data-card-id]').forEach(card=>card.draggable=enabled);
+}
+updateCardDraggable();
+window.addEventListener('resize',updateCardDraggable);
 initCardDragReorder();
 
 /* ============ PWA: register service worker for offline/installable support ============ */
@@ -3596,7 +3828,7 @@ function enhanceControls(root){
   root.querySelectorAll('.icon-btn,.del-btn').forEach(el=>{
     if(el.getAttribute('aria-label')) return;
     const context = el.closest('.qlink,.todo-item,.class-card,.kanban-card,tr,.habit-row,.card');
-    const title = context?.querySelector('.label,.name,h2,[contenteditable]')?.textContent.trim() || 'item';
+    const title = context?.querySelector('.label,.name,.editable-text,h2')?.textContent.trim() || 'item';
     el.setAttribute('aria-label',el.title || (el.textContent.trim()==='+' ? 'Add to ' : 'Remove ') + title);
   });
   root.querySelectorAll('.qlink a').forEach(el=>el.setAttribute('aria-label',el.closest('.qlink').querySelector('.label').textContent));
@@ -3639,15 +3871,21 @@ function showOverlay(id){
 }
 function hideOverlay(id){
   document.getElementById(id).classList.remove('open');
+  if(id === 'editDialogOverlay') cancelEditDialogFromOverlay();
   const active=overlays.find(overlay=>overlay.classList.contains('open'));
   updateOverlayInert(active);
-  if(!active && overlayReturnFocus?.isConnected){overlayReturnFocus.focus();overlayReturnFocus=null;}
+  if(active){
+    active.querySelector('.modal')?.focus();
+  } else if(overlayReturnFocus?.isConnected){
+    overlayReturnFocus.focus();
+    overlayReturnFocus=null;
+  }
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Tab') return;
   const active = overlays.filter(o=>o.classList.contains('open')).at(-1);
   if(!active) return;
-  const focusable = Array.from(active.querySelectorAll('button,a[href],input,select,textarea,[tabindex="0"],[contenteditable="true"]')).filter(el=>!el.disabled&&!el.closest('[inert]')&&el.getClientRects().length);
+  const focusable = Array.from(active.querySelectorAll('button,a[href],input,select,textarea,[tabindex="0"]')).filter(el=>!el.disabled&&!el.closest('[inert]')&&el.getClientRects().length);
   if(!focusable.length){e.preventDefault();active.querySelector('.modal').focus();return;}
   const first=focusable[0],last=focusable.at(-1);
   if(e.shiftKey && (document.activeElement===first || !active.contains(document.activeElement))){e.preventDefault();last.focus();}
@@ -3657,10 +3895,16 @@ document.querySelectorAll('.inline-form').forEach(form=>form.inert=!form.classLi
 // Keyboard reordering retains the existing column-based saved layout.
 document.querySelectorAll('.drag-handle').forEach(handle=>{
   handle.tabIndex=0;handle.setAttribute('role','button');
-  handle.setAttribute('aria-label','Reorder card: Alt + Arrow Up or Down');
+  handle.setAttribute('aria-label','Reorder card: Alt plus an arrow key');
   handle.addEventListener('keydown',e=>{
-    if(!e.altKey || !['ArrowUp','ArrowDown'].includes(e.key)) return;
+    if(!e.altKey || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
     const card=handle.closest('.card');
+    if(['ArrowLeft','ArrowRight'].includes(e.key)){
+      const columns=Array.from(document.querySelectorAll('#mainGrid > .col-span-1'));
+      const index=columns.indexOf(card.parentElement)+(e.key==='ArrowLeft'?-1:1);
+      if(!columns[index]) return;
+      e.preventDefault();columns[index].appendChild(card);saveCardOrder();handle.focus();return;
+    }
     const sibling=e.key==='ArrowUp'?card.previousElementSibling:card.nextElementSibling;
     if(!sibling) return;
     e.preventDefault();card.parentElement.insertBefore(card,e.key==='ArrowUp'?sibling:sibling.nextSibling);saveCardOrder();handle.focus();
