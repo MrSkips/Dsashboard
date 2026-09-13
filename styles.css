@@ -842,13 +842,18 @@ body.focus-mode #enterFocusMode{display:none;}
 kbd{font:600 10px 'IBM Plex Mono',monospace;color:var(--muted);}
 #weatherPill{position:relative;cursor:pointer;display:flex;align-items:center;gap:6px;}
 .edit-dialog{max-width:480px;align-self:center;}
+.edit-dialog .modal-header{align-items:flex-start;flex-wrap:nowrap;}
+.edit-dialog .modal-header>div{flex:1;min-width:0;}
 .edit-dialog h2{margin:0;font-size:16px;}
 .dialog-description{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.5;}
 .dialog-description:empty{display:none;}
 .edit-dialog-fields{display:grid;gap:13px;}
 .edit-field{display:grid;gap:5px;}
 .edit-field label{color:var(--muted);font-size:11px;font-weight:600;}
-.edit-field input,.edit-field select,.edit-field textarea{width:100%;min-height:44px;padding:9px 10px;}
+.edit-field input,.edit-field select,.edit-field textarea{
+  width:100%;min-height:44px;padding:9px 10px;background:var(--panel);
+  color:var(--text);border:1px solid var(--border);border-radius:6px;
+}
 .edit-field textarea{min-height:92px;resize:vertical;}
 .edit-dialog-actions{justify-content:flex-end;margin-top:18px;}
 .edit-dialog-actions button{min-height:42px;min-width:92px;}
