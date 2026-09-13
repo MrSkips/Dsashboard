@@ -915,7 +915,7 @@ kbd{font:600 10px 'IBM Plex Mono',monospace;color:var(--muted);}
   .modal-overlay{align-items:flex-end;padding:0;}
   .modal{max-height:92dvh;border-radius:12px 12px 0 0;padding:14px 12px calc(16px + env(safe-area-inset-bottom));}
   .modal-header{top:-14px;padding:12px 0 10px;}
-  .edit-dialog{max-width:none;}
+  .edit-dialog{max-width:none;align-self:flex-end;}
   .edit-dialog-actions{position:sticky;bottom:0;background:var(--panel-2);padding-top:10px;}
   .footer-actions{display:grid;grid-template-columns:1fr 1fr;}
   .footer-actions button{min-height:42px;}
