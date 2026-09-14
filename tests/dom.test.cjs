@@ -82,6 +82,15 @@ test('budget clearly reports local storage and its complete state is syncable',a
   w.syncBudgetNow();
   assert.ok(w.document.getElementById('lockOverlay').classList.contains('open'));
 });
+test('weekly budget can reset on a chosen payday',async t=>{
+  const w=await app(t,{wit_budget_week_start:5});
+  const start=w.budgetPeriodStart('week',new w.Date(2026,8,13));
+  const end=w.budgetPeriodEnd('week',new w.Date(2026,8,13));
+  assert.equal(w.localISODate(start),'2026-09-11');
+  assert.equal(w.localISODate(end),'2026-09-17');
+  assert.equal(w.gatherState().budgetWeekStartDay,5);
+  assert.match(w.document.getElementById('budgetSnapshotBody').textContent,/starts Fri/);
+});
 test('command palette replaces an open dialog and restores the original focus',async t=>{
   const w=await app(t);const opener=w.document.querySelector('[onclick="openScheduleModal()"]');opener.focus();
   w.openScheduleModal();w.openPalette();assert.equal(w.document.querySelectorAll('.modal-overlay.open').length,1);assert.equal(w.document.getElementById('paletteOverlay').inert,false);

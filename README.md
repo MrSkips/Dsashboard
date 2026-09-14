@@ -60,7 +60,8 @@ Optional sync retains the existing encrypted GitHub Gist flow (AES-GCM with a
 passphrase-derived key). Sync is user-initiated; the dashboard stays usable without
 unlocking it. Loading a differing cloud copy asks before replacing local sections.
 Budget shows whether it is currently local-only or cloud-synced and provides a
-direct Sync now/Unlock sync control. Transactions, weekly and monthly limits,
+direct Sync now/Unlock sync control. The weekly view can reset on any chosen
+weekday (for example, payday). Transactions, weekly and monthly limits,
 recurring income and bills, the income ledger, and the planning simulator are all
 included in the encrypted sync payload. Unlock sync in each browser session before
 editing if you want those changes available on another computer.

@@ -1,4 +1,4 @@
-const DASHBOARD_VERSION = '1.3.4';
+const DASHBOARD_VERSION = '1.3.5';
 let __dailyPlannerReady = false; // flips true once classes/deadlines/events/todos have all been declared
 const DASHBOARD_UPDATED = 'Sep 2026 — mobile-first editing, persistent focus, and verified WIT grades';
 /* ============ live clock ============ */
@@ -384,7 +384,7 @@ let syncGistId = null;
 let syncCryptoKey = null;
 let syncSaltB64 = null;
 let cloudSyncTimer = null;
-const BUDGET_STORAGE_KEYS = new Set(['wit_transactions','wit_budget_view','wit_budget_limits','wit_recurring','wit_recurring_income','wit_income_log','wit_simBudget']);
+const BUDGET_STORAGE_KEYS = new Set(['wit_transactions','wit_budget_view','wit_budget_limits','wit_budget_week_start','wit_recurring','wit_recurring_income','wit_income_log','wit_simBudget']);
 let budgetLocalNoticeShown = false;
 
 function save(key, val){
@@ -1326,6 +1326,7 @@ renderDailyPlanner();
 let transactions = load('wit_transactions', []);
 let budgetViewMode = load('wit_budget_view', 'month');
 let budgetLimits = load('wit_budget_limits', { weekly: 0, monthly: 0 });
+let budgetWeekStartDay = load('wit_budget_week_start', 1); // 0 Sunday … 6 Saturday; Monday preserves existing behavior
 let recurringBills = load('wit_recurring', []);
 let recurringIncome = load('wit_recurring_income', []);
 let incomeLog = load('wit_income_log', {}); // { "<incomeName>|<weekday>": "YYYY-MM-DD" }; accepts legacy week labels
@@ -1683,8 +1684,8 @@ function txnMonthKey(dateStr){ return dateStr ? dateStr.slice(0,7) : ''; }
 function budgetPeriodStart(mode, date = new Date()){
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   if(mode === 'week'){
-    const mondayOffset = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - mondayOffset);
+    const weekOffset = (start.getDay() - budgetWeekStartDay + 7) % 7;
+    start.setDate(start.getDate() - weekOffset);
   } else start.setDate(1);
   start.setHours(0,0,0,0);
   return start;
@@ -1711,18 +1712,21 @@ function budgetLimitKey(){ return budgetViewMode === 'week' ? 'weekly' : 'monthl
 async function setBudgetLimits(){
   const values = await openEditDialog({
     title:'Spending limits',
-    description:'Use zero or leave a field blank to clear that limit.',
+    description:'Choose the day your budget week resets—usually your payday. Use zero or leave a limit blank to clear it.',
     fields:[
       {name:'weekly',label:'Weekly limit',type:'number',value:budgetLimits.weekly || '',min:0,step:'0.01'},
-      {name:'monthly',label:'Monthly limit',type:'number',value:budgetLimits.monthly || '',min:0,step:'0.01'}
+      {name:'monthly',label:'Monthly limit',type:'number',value:budgetLimits.monthly || '',min:0,step:'0.01'},
+      {name:'weekStart',label:'Budget week starts on',type:'select',value:String(budgetWeekStartDay),options:WEEKDAY_NAMES.map((label,value)=>({label,value:String(value)}))}
     ]
   });
   if(!values) return;
   budgetLimits.weekly = Math.round(Number(values.weekly || 0) * 100) / 100;
   budgetLimits.monthly = Math.round(Number(values.monthly || 0) * 100) / 100;
+  budgetWeekStartDay = Number(values.weekStart);
   save('wit_budget_limits', budgetLimits);
+  save('wit_budget_week_start', budgetWeekStartDay);
   renderBudgetSnapshot();
-  toast('Weekly and monthly limits updated.');
+  toast(`Budget updated. Weeks now start on ${WEEKDAY_NAMES[budgetWeekStartDay]}.`);
 }
 function renderBudgetSnapshot(){
   const body = document.getElementById('budgetSnapshotBody');
@@ -1748,7 +1752,7 @@ function renderBudgetSnapshot(){
   document.getElementById('budgetWeekBtn')?.classList.toggle('active', budgetViewMode === 'week');
   document.getElementById('budgetMonthBtn')?.classList.toggle('active', budgetViewMode === 'month');
   body.innerHTML = `
-    <div class="budget-period-label">${budgetViewMode === 'week' ? 'This week' : 'This month'} · ${esc(periodLabel)}</div>
+    <div class="budget-period-label">${budgetViewMode === 'week' ? `This week · starts ${WEEKDAY_NAMES[budgetWeekStartDay]}` : 'This month'} · ${esc(periodLabel)}</div>
     <div class="budget-snapshot-metrics">
       <div><span>Spent</span><b class="budget-spent">${money(spent)}</b></div>
       <div><span>Income</span><b class="budget-income">${money(income)}</b></div>
@@ -2700,7 +2704,7 @@ async function githubPatchGist(token, gistId, content){
 function gatherState(){
   return {
     links, schedule, classes, deadlines, events, coop, todos,
-    transactions, budgetViewMode, budgetLimits, recurringBills, simBudget,
+    transactions, budgetViewMode, budgetLimits, budgetWeekStartDay, recurringBills, simBudget,
     grades, recurringIncome, incomeLog, countdown,
     habits, semester, focusSessions, gpaHistory, timerSettings,
     name: localStorage.getItem('wit_name') || ''
@@ -2744,6 +2748,7 @@ function validateBundle(bundle){
   }
   if(bundle.budgetLimits !== undefined && (!object(bundle.budgetLimits) || !number(bundle.budgetLimits.weekly) || !number(bundle.budgetLimits.monthly) || Number(bundle.budgetLimits.weekly) < 0 || Number(bundle.budgetLimits.monthly) < 0)) throw new Error('Invalid budget limits');
   if(bundle.budgetViewMode !== undefined && !['week','month'].includes(bundle.budgetViewMode)) throw new Error('Invalid budget view');
+  if(bundle.budgetWeekStartDay !== undefined && (!Number.isInteger(bundle.budgetWeekStartDay) || bundle.budgetWeekStartDay < 0 || bundle.budgetWeekStartDay > 6)) throw new Error('Invalid budget week start');
   if(bundle.incomeLog && !Object.values(bundle.incomeLog).every(text)) throw new Error('Invalid income ledger');
   if(bundle.countdown && (!text(bundle.countdown.label) || !(bundle.countdown.date===''||date(bundle.countdown.date)))) throw new Error('Invalid countdown');
   if(bundle.semester && !['start','end'].every(k=>bundle.semester[k]===''||date(bundle.semester[k]))) throw new Error('Invalid semester');
@@ -2757,7 +2762,7 @@ function applyCloudState(bundle){
   validateBundle(bundle);
   // Commit storage first, rolling back every touched key if storage is full.
   const state = {...gatherState(), ...bundle};
-  const keys = {links:'links',schedule:'schedule',classes:'classes',deadlines:'deadlines',events:'events',coop:'coop',todos:'todos',transactions:'transactions',budgetViewMode:'budget_view',budgetLimits:'budget_limits',recurringBills:'recurring',simBudget:'simBudget',grades:'grades',recurringIncome:'recurring_income',incomeLog:'income_log',countdown:'countdown',habits:'habits',semester:'semester',focusSessions:'focus_sessions',gpaHistory:'gpa_history',timerSettings:'timer_settings'};
+  const keys = {links:'links',schedule:'schedule',classes:'classes',deadlines:'deadlines',events:'events',coop:'coop',todos:'todos',transactions:'transactions',budgetViewMode:'budget_view',budgetLimits:'budget_limits',budgetWeekStartDay:'budget_week_start',recurringBills:'recurring',simBudget:'simBudget',grades:'grades',recurringIncome:'recurring_income',incomeLog:'income_log',countdown:'countdown',habits:'habits',semester:'semester',focusSessions:'focus_sessions',gpaHistory:'gpa_history',timerSettings:'timer_settings'};
   const previous = new Map();
   try {
     localStorage.setItem('wit_before_restore', JSON.stringify(gatherState()));
@@ -2775,7 +2780,7 @@ function applyCloudState(bundle){
     }
     throw new Error('Not enough device storage to restore safely. Export a backup and free space first.');
   }
-  ({links,schedule,classes,deadlines,events,coop,todos,transactions,budgetViewMode,budgetLimits,recurringBills,simBudget,grades,recurringIncome,incomeLog,countdown,habits,semester,focusSessions,gpaHistory,timerSettings} = state);
+  ({links,schedule,classes,deadlines,events,coop,todos,transactions,budgetViewMode,budgetLimits,budgetWeekStartDay,recurringBills,simBudget,grades,recurringIncome,incomeLog,countdown,habits,semester,focusSessions,gpaHistory,timerSettings} = state);
   nameEl.textContent = state.name || 'Your dashboard';
   refreshClassesForToday();
   renderLinks(); renderClasses(); renderDeadlines(); renderCoop(); renderTodos(); renderBudget();
