@@ -103,4 +103,5 @@ test('phone styles use one-column content and touch-sized controls',()=>{
   assert.match(css,/\.grid\{grid-template-columns:minmax\(0,1fr\);\}/);
   assert.match(css,/\.icon-btn,\.del-btn,\.close-modal\{min-height:42px;min-width:42px;\}/);
   assert.match(css,/\.week-grid\{min-width:0;grid-template-columns:1fr;/);
+  assert.match(css,/#lockOverlay\{align-items:flex-end;\}/);
 });

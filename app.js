@@ -1,4 +1,4 @@
-const DASHBOARD_VERSION = '1.3.3';
+const DASHBOARD_VERSION = '1.3.4';
 let __dailyPlannerReady = false; // flips true once classes/deadlines/events/todos have all been declared
 const DASHBOARD_UPDATED = 'Sep 2026 — mobile-first editing, persistent focus, and verified WIT grades';
 /* ============ live clock ============ */
