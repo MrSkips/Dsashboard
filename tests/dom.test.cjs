@@ -89,6 +89,7 @@ test('weekly budget can reset on a chosen payday',async t=>{
   assert.equal(w.localISODate(start),'2026-09-11');
   assert.equal(w.localISODate(end),'2026-09-17');
   assert.equal(w.gatherState().budgetWeekStartDay,5);
+  w.setBudgetView('week');
   assert.match(w.document.getElementById('budgetSnapshotBody').textContent,/starts Fri/);
 });
 test('command palette replaces an open dialog and restores the original focus',async t=>{
