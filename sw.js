@@ -1,6 +1,6 @@
 // Cache only this app's public shell. Never cache weather or authenticated API responses.
-const CACHE_NAME = 'wit-dashboard-v3';
-const CORE_ASSETS = ['./', './index.html', './styles.css?v=1.3.2', './dashboard-ui.js?v=1.3.2', './app.js?v=1.3.2', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
+const CACHE_NAME = 'wit-dashboard-v4';
+const CORE_ASSETS = ['./', './index.html', './styles.css?v=1.3.3', './dashboard-ui.js?v=1.3.3', './app.js?v=1.3.3', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 const CORE_URLS = new Set(CORE_ASSETS.map(path => new URL(path, self.registration.scope).href));
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS)));

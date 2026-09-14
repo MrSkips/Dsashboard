@@ -1,4 +1,4 @@
-const DASHBOARD_VERSION = '1.3.2';
+const DASHBOARD_VERSION = '1.3.3';
 let __dailyPlannerReady = false; // flips true once classes/deadlines/events/todos have all been declared
 const DASHBOARD_UPDATED = 'Sep 2026 — mobile-first editing, persistent focus, and verified WIT grades';
 /* ============ live clock ============ */
@@ -384,11 +384,14 @@ let syncGistId = null;
 let syncCryptoKey = null;
 let syncSaltB64 = null;
 let cloudSyncTimer = null;
+const BUDGET_STORAGE_KEYS = new Set(['wit_transactions','wit_budget_view','wit_budget_limits','wit_recurring','wit_recurring_income','wit_income_log','wit_simBudget']);
+let budgetLocalNoticeShown = false;
 
 function save(key, val){
   try { localStorage.setItem(key, JSON.stringify(val)); }
   catch(error) { toast('Changes could not be saved on this device. Export a backup now.', true); return false; }
   if(typeof scheduleCloudPush === 'function') scheduleCloudPush();
+  if(BUDGET_STORAGE_KEYS.has(key)) noteBudgetStorageState();
   if(__dailyPlannerReady && ['wit_classes','wit_deadlines','wit_todos','wit_events'].includes(key)) queueMicrotask(renderDailyPlanner);
   return true;
 }
@@ -1756,7 +1759,9 @@ function renderBudgetSnapshot(){
       <div class="budget-progress" role="progressbar" aria-label="${budgetViewMode} spending limit" aria-valuemin="0" aria-valuemax="${limit || 1}" aria-valuenow="${spent}"><span style="width:${percent}%;"></span></div>
       <small>${limit ? (remaining >= 0 ? `${money(remaining)} remaining` : `${money(Math.abs(remaining))} over limit`) : 'Set a limit to track spending pace.'}</small>
       ${paceText ? `<small class="${paceDifference > 0 ? 'budget-negative' : 'budget-income'}">${paceText}</small>` : ''}
-    </div>`;
+    </div>
+    <div class="budget-storage-state" id="budgetSnapshotStorageState"></div>`;
+  renderBudgetSyncState();
 }
 function ordinalSuffix(n){
   n = Number(n);
@@ -2783,6 +2788,29 @@ function setSyncStatusPill(text){
   if(pill) pill.textContent = text;
   const menuLabel = document.getElementById('syncMenuLabel');
   if(menuLabel) menuLabel.textContent = String(text).replace(/^[🔒🔓]\s*/, '');
+  renderBudgetSyncState();
+}
+function budgetSyncState(){
+  if(syncEnabled) return {label:'Sync now',className:'synced',message:'Encrypted cloud sync is unlocked. Budget changes sync automatically.'};
+  if(localStorage.getItem('wit_sync_enabled') === '1') return {label:'Unlock sync',className:'local',message:'Saved on this device until you unlock cloud sync for this session.'};
+  return {label:'Cloud sync',className:'local',message:'Saved only in this browser. Turn on encrypted cloud sync to use this budget on another computer.'};
+}
+function renderBudgetSyncState(){
+  const state = budgetSyncState();
+  for(const id of ['budgetSyncBtn','budgetModalSyncBtn']){
+    const button = document.getElementById(id);
+    if(button && !button.disabled) button.textContent = state.label;
+  }
+  for(const id of ['budgetSnapshotStorageState','budgetModalStorageState']){
+    const el = document.getElementById(id);
+    if(el){ el.className = 'budget-storage-state '+state.className; el.textContent = state.message; }
+  }
+}
+function noteBudgetStorageState(){
+  queueMicrotask(renderBudgetSyncState);
+  if(syncEnabled || budgetLocalNoticeShown) return;
+  budgetLocalNoticeShown = true;
+  queueMicrotask(()=>toast('Budget saved on this device only. Use Cloud sync to access it on another computer.'));
 }
 function scheduleCloudPush(){
   if(!syncEnabled || !syncCryptoKey || !syncGistId || !syncToken) return;
@@ -2798,13 +2826,24 @@ async function pushStateToCloud(){
     const now = new Date();
     localStorage.setItem('wit_last_synced', now.toISOString());
     setSyncStatusPill('🔒 Synced ' + fmtClock(now));
+    return true;
   } catch(err){
     console.error(err);
     const pill = document.getElementById('syncStatusPill');
     if(pill) pill.title = err.message || String(err);
     setSyncStatusPill('🔒 Sync failed — click to retry');
     toast('Sync failed: ' + (err.message || err) + (/404/.test(err.message||'') ? ' — if your GitHub token is a "fine-grained" token, switch to a classic token with the "gist" scope; fine-grained tokens can\'t access the Gists API.' : ''), true);
+    return false;
   }
+}
+async function syncBudgetNow(){
+  if(!syncEnabled){ openSyncOverlay(); return; }
+  const buttons = ['budgetSyncBtn','budgetModalSyncBtn'].map(id=>document.getElementById(id)).filter(Boolean);
+  buttons.forEach(button=>{ button.disabled=true; button.textContent='Syncing…'; });
+  const synced = await pushStateToCloud();
+  buttons.forEach(button=>{ button.disabled=false; });
+  renderBudgetSyncState();
+  if(synced) toast('Budget and dashboard synced to the encrypted cloud copy.');
 }
 
 // When a token is already remembered on this device, hide the token field

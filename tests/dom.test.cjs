@@ -70,6 +70,18 @@ test('budget snapshot switches periods and tracks configured limits',async t=>{
   assert.match(body.textContent,/\$12\.00 of \$100\.00 limit/);
   assert.match(body.textContent,/\$100\.00/);
 });
+test('budget clearly reports local storage and its complete state is syncable',async t=>{
+  const w=await app(t,{wit_transactions:[{date:'2026-09-10',description:'Books',amount:25,type:'expense',category:'School'}],wit_budget_limits:{weekly:75,monthly:300},wit_recurring:[{name:'Rent',amount:900,day:1}],wit_recurring_income:[{name:'Pay',amount:200,weekday:5}]});
+  const state=w.gatherState();
+  assert.equal(state.transactions[0].description,'Books');
+  assert.equal(state.budgetLimits.monthly,300);
+  assert.equal(state.recurringBills[0].name,'Rent');
+  assert.equal(state.recurringIncome[0].name,'Pay');
+  assert.ok(state.simBudget.categories.length);
+  assert.match(w.document.getElementById('budgetSnapshotStorageState').textContent,/Saved only in this browser/);
+  w.syncBudgetNow();
+  assert.ok(w.document.getElementById('lockOverlay').classList.contains('open'));
+});
 test('command palette replaces an open dialog and restores the original focus',async t=>{
   const w=await app(t);const opener=w.document.querySelector('[onclick="openScheduleModal()"]');opener.focus();
   w.openScheduleModal();w.openPalette();assert.equal(w.document.querySelectorAll('.modal-overlay.open').length,1);assert.equal(w.document.getElementById('paletteOverlay').inert,false);

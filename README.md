@@ -59,6 +59,11 @@ normal backups and browser-local data are plaintext, even when cloud sync is use
 Optional sync retains the existing encrypted GitHub Gist flow (AES-GCM with a
 passphrase-derived key). Sync is user-initiated; the dashboard stays usable without
 unlocking it. Loading a differing cloud copy asks before replacing local sections.
+Budget shows whether it is currently local-only or cloud-synced and provides a
+direct Sync now/Unlock sync control. Transactions, weekly and monthly limits,
+recurring income and bills, the income ledger, and the planning simulator are all
+included in the encrypted sync payload. Unlock sync in each browser session before
+editing if you want those changes available on another computer.
 Unchecking Remember token removes any previously saved token on successful unlock.
 Do not use simultaneous editing on multiple devices: automatic conflict merging is
 not implemented. Remembered tokens are stored in this browser, not in the repo.
